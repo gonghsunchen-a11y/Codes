@@ -123,7 +123,7 @@ void Task1code(void *parameter) {
 void Task2code(void *parameter) {
   while (1) {
     while (!read_done_flag);
-    if(Serial0.read() == 0xbb){
+    if(Serial0.read() == 0xDD){
       if(dis!=0){
         //dis = 16 - (uint8_t)(16.0 * ir_weight[max_index] / (float)max_value);
         uint8_t send_data = ((dis & 0x0F) << 4) | (max_port & 0x0F);
