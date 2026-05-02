@@ -10,9 +10,31 @@ static boolean connected = false;
 static BLEAddress *pServerAddress;
 static BLERemoteCharacteristic *pRemoteCharacteristic;
 
-// 电位器相关定义
-const int potentiometerPin = 7;  // 电位器连接到 GPIO 7
-uint8_t lastBrightness = 0;       // 存储上一次发送的亮度值 (0-255)
+void rgbLEDWrite(uint8_t red_val, uint8_t green_val, uint8_t blue_val) {
+  rmt_data_t led_data[24];
+  // default WS2812B color order is G, R, B
+  int color[3] = {red_val, green_val, blue_val};
+  int i = 0;
+  for (int col = 0; col < 3; col++) {
+    for (int bit = 0; bit < 8; bit++) {
+      if ((color[col] & (1 << (7 - bit)))) {
+        // HIGH bit
+        led_data[i].level0 = 1;     // T1H
+        led_data[i].duration0 = 8;  // 0.8us
+        led_data[i].level1 = 0;     // T1L
+        led_data[i].duration1 = 4;  // 0.4us
+      } else {
+        // LOW bit
+        led_data[i].level0 = 1;     // T0H
+        led_data[i].duration0 = 4;  // 0.4us
+        led_data[i].level1 = 0;     // T0L
+        led_data[i].duration1 = 8;  // 0.8us
+      }
+      i++;
+    }
+  }
+  rmtWrite(38, led_data, RMT_SYMBOLS_OF(led_data), RMT_WAIT_FOR_EVER);
+}
 
 class MyClientCallbacks : public BLEClientCallbacks {
   void onConnect(BLEClient *pclient) {}
@@ -95,6 +117,8 @@ void setup() {
   pBLEScan->setAdvertisedDeviceCallbacks(new MyAdvertisedDeviceCallbacks());
   pBLEScan->setActiveScan(true);  // 主动扫描
   pBLEScan->start(30, false);     // 开始扫描，持续 30 秒
+
+  rmtInit(38, RMT_TX_MODE, RMT_MEM_NUM_BLOCKS_1, 10000000);
 }
 
 void loop() {
@@ -112,6 +136,7 @@ void loop() {
 
   // 如果已连接，则读取电位器并发送数据
   if (connected) {
+    rgbLEDWrite(0,255,0);
     uint8_t data[5] = {0xAA, 0xCC, 0xEE, 0x01, 0x02};
     Serial.println("send");
     pRemoteCharacteristic->writeValue((uint8_t*)data, sizeof(data), false);
@@ -121,6 +146,7 @@ void loop() {
     if (!doConnect) {
       Serial.println("Disconnected. Rescanning...");
       BLEDevice::getScan()->start(5, false);
+      rgbLEDWrite(255,0,0);
     }
   }
 }
