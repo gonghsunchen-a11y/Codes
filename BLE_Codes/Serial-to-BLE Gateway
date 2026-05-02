@@ -1,0 +1,247 @@
+#include <BLEDevice.h>
+
+// ============ BLE UUID ============
+#define SERVICE_UUID                   "458063a1-02bf-4664-857e-16c1030be066"
+#define BRIGHTNESS_CHARACTERISTIC_UUID "a5209632-66a9-411d-9353-9be5507790fa"
+
+// ============ BLE 全局變量 ============
+static boolean doConnect = false;
+static boolean connected = false;
+static BLEAddress *pServerAddress;
+static BLERemoteCharacteristic *pRemoteCharacteristic;
+
+// ============ IR 設定 ============
+#define IR_Port_Count 12
+uint16_t ir_port[IR_Port_Count] = {0, 2, 3,  4,  5,  7,  8,  9, 10, 13, 14, 15};
+uint8_t  ir_pins[IR_Port_Count] = {5, 7, 8, 10, 11, 13, 15, 16, 17,  1,  2,  3};
+uint16_t ir_weight[IR_Port_Count];
+
+volatile bool read_done_flag = false;
+uint8_t max_index = 0xff;
+uint8_t dis = 0;
+uint8_t max_port = 0xff;
+uint8_t ball_possession = 0;
+
+TaskHandle_t Task1;
+TaskHandle_t Task2;
+
+// ============ RGB LED ============
+void rgbLEDWrite(uint8_t red_val, uint8_t green_val, uint8_t blue_val) {
+  rmt_data_t led_data[24];
+  int color[3] = {red_val, green_val, blue_val};
+  int i = 0;
+  for (int col = 0; col < 3; col++) {
+    for (int bit = 0; bit < 8; bit++) {
+      if ((color[col] & (1 << (7 - bit)))) {
+        led_data[i].level0 = 1; led_data[i].duration0 = 8;
+        led_data[i].level1 = 0; led_data[i].duration1 = 4;
+      } else {
+        led_data[i].level0 = 1; led_data[i].duration0 = 4;
+        led_data[i].level1 = 0; led_data[i].duration1 = 8;
+      }
+      i++;
+    }
+  }
+  rmtWrite(38, led_data, RMT_SYMBOLS_OF(led_data), RMT_WAIT_FOR_EVER);
+}
+
+// ============ BLE Client Callbacks ============
+class MyClientCallbacks : public BLEClientCallbacks {
+  void onConnect(BLEClient *pclient) {}
+  void onDisconnect(BLEClient *pclient) {
+    connected = false;
+    Serial.println("BLE Disconnected");
+  }
+};
+
+class MyAdvertisedDeviceCallbacks : public BLEAdvertisedDeviceCallbacks {
+  void onResult(BLEAdvertisedDevice advertisedDevice) {
+    if (advertisedDevice.isAdvertisingService(BLEUUID(SERVICE_UUID))) {
+      Serial.print("Found target server: ");
+      Serial.println(advertisedDevice.getAddress().toString().c_str());
+      advertisedDevice.getScan()->stop();
+      pServerAddress = new BLEAddress(advertisedDevice.getAddress());
+      doConnect = true;
+    }
+  }
+};
+
+bool connectToServer(BLEAddress pAddress) {
+  Serial.print("Connecting to "); Serial.println(pAddress.toString().c_str());
+  BLEClient *pClient = BLEDevice::createClient();
+  pClient->setClientCallbacks(new MyClientCallbacks());
+  if (!pClient->connect(pAddress)) {
+    Serial.println("Connection failed");
+    return false;
+  }
+  Serial.println("Connected to server");
+  BLERemoteService *pRemoteService = pClient->getService(SERVICE_UUID);
+  if (pRemoteService == nullptr) {
+    Serial.println("Service not found");
+    pClient->disconnect();
+    return false;
+  }
+  pRemoteCharacteristic = pRemoteService->getCharacteristic(BRIGHTNESS_CHARACTERISTIC_UUID);
+  if (pRemoteCharacteristic == nullptr) {
+    Serial.println("Characteristic not found");
+    pClient->disconnect();
+    return false;
+  }
+  connected = true;
+  return true;
+}
+
+// ============ IR Reading ============
+void IR_reading() {
+  max_index = 0xff;
+  dis = 0;
+  max_port = 0xff;
+  for (uint8_t i = 0; i < IR_Port_Count; i++) ir_weight[i] = 0;
+
+  uint64_t start = micros();
+  while (micros() - start < 833) {
+    for (uint8_t i = 0; i < IR_Port_Count; i++) {
+      if (!digitalRead(ir_pins[i])) ir_weight[i]++;
+    }
+  }
+
+  for (uint8_t i = 0; i < IR_Port_Count; i++) {
+    if (ir_weight[i] > 0) dis++;
+  }
+
+  if (dis) {
+    uint16_t max_value = 0;
+    for (uint8_t i = 0; i < IR_Port_Count; i++) {
+      if (ir_weight[i] > max_value) {
+        max_index = i;
+        max_value = ir_weight[i];
+      }
+    }
+    max_port = ir_port[max_index];
+    dis = IR_Port_Count + 1 - dis;
+  } else {
+    dis = 0;
+    max_index = 0xff;
+  }
+
+  ball_possession = (uint8_t)(255 * (analogRead(9) / 4096.0));
+  dis = 5;
+  max_port = 6;
+  ball_possession = 9;
+  read_done_flag = true;
+}
+
+// ============ Setup ============
+void setup() {
+  Serial.begin(115200);
+  Serial0.begin(115200);
+  pinMode(9, INPUT);
+
+  rmtInit(38, RMT_TX_MODE, RMT_MEM_NUM_BLOCKS_1, 10000000);
+  rgbLEDWrite(125, 0, 0);
+
+  for (uint8_t i = 0; i < 16; i++) pinMode(i, INPUT_PULLUP);
+  for (uint8_t i = 0; i < IR_Port_Count; i++) pinMode(ir_pins[i], INPUT_PULLUP);
+
+  // BLE 初始化
+  BLEDevice::init("");
+  BLEScan *pBLEScan = BLEDevice::getScan();
+  pBLEScan->setAdvertisedDeviceCallbacks(new MyAdvertisedDeviceCallbacks());
+  pBLEScan->setActiveScan(true);
+  pBLEScan->start(30, false);
+
+  xTaskCreatePinnedToCore(Task1code, "Task1", 10000, NULL, 1, &Task1, 0);
+  xTaskCreatePinnedToCore(Task2code, "Task2", 10000, NULL, 1, &Task2, 1);
+}
+
+// ============ Task1: IR Reading (Core 0) ============
+void Task1code(void *parameter) {
+  while (1) {
+    if (!read_done_flag) {
+      IR_reading();
+    }
+    vTaskDelay(1 / portTICK_PERIOD_MS);
+  }
+}
+
+// ============ Task2: BLE 連接管理 + Serial0 + 發送 (Core 1) ============
+void Task2code(void *parameter) {
+  while (1) {
+
+    // --- BLE 連線管理 ---
+    if (doConnect) {
+      if (connectToServer(*pServerAddress)) {
+        Serial.println("BLE Connected!");
+        rgbLEDWrite(0, 125, 0);
+        doConnect = false;
+      } else {
+        Serial.println("BLE Connect failed, retry...");
+        delay(3000);
+        BLEDevice::getScan()->start(5, false);
+      }
+    }
+
+    if (!connected && !doConnect) {
+      BLEDevice::getScan()->start(5, false);
+      rgbLEDWrite(125, 0, 0);
+    }
+
+    // --- 等待IR讀取完成 ---
+    while (!read_done_flag);
+
+    // --- 接收 Teensy 請求並回應 Serial0 ---
+    if (Serial0.read() == 0xDD) {
+      if (dis != 0) {
+        uint8_t send_data = ((dis & 0x0F) << 4) | (max_port & 0x0F);
+        Serial0.write(0xAA);
+        Serial0.write(send_data);
+        Serial0.write(ball_possession);
+        Serial0.write(0xEE);
+      } else {
+        Serial0.write(0xAA);
+        Serial0.write(0xFF);
+        Serial0.write(0xFF);
+        Serial0.write(0xEE);
+      }
+
+      // --- 同時透過 BLE 發送給 ESP32 B ---
+      if (connected) {
+        // 打包成 Packet 格式（對應 ESP32 B 的 struct）
+        // ball_dist  = dis
+        // ball_angle = max_port (用 int8_t，port號碼當角度)
+        // robot_x    = 0（此端無資料，保留）
+        // robot_y    = 0（此端無資料，保留）
+        // mode       = ball_possession
+        uint8_t packet[5];
+        packet[0] = dis;                     // ball_dist
+        packet[1] = (int8_t)max_port;        // ball_angle
+        packet[2] = 7;                       // robot_x（保留）
+        packet[3] = 8;                       // robot_y（保留）
+        packet[4] = ball_possession;         // mode（用來傳 possession）
+        pRemoteCharacteristic->writeValue(packet, sizeof(packet), false);
+        Serial.println("BLE packet sent");
+      }
+    }
+
+    read_done_flag = false;
+
+    // --- Debug Serial ---
+    if (Serial.available()) {
+      Serial.println("");
+      for (uint8_t i = 0; i < IR_Port_Count; i++) {
+        Serial.print(ir_port[i]);
+        Serial.print("=");
+        Serial.println(ir_weight[i]);
+      }
+      Serial.print("Max = "); Serial.print(max_port);
+      Serial.print(" @ distance "); Serial.println(dis);
+      delay(100);
+    }
+
+    vTaskDelay(1 / portTICK_PERIOD_MS);
+  }
+}
+
+void loop() {
+  // Empty — 全由Task處理
+}
