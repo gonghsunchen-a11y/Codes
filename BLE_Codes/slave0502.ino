@@ -25,11 +25,38 @@ const int ledPin = 7; // LED 连接到 GPIO 7
 #define SERVICE_UUID "458063a1-02bf-4664-857e-16c1030be066"
 #define BRIGHTNESS_CHARACTERISTIC_UUID "a5209632-66a9-411d-9353-9be5507790fa"
 
+void rgbLEDWrite(uint8_t red_val, uint8_t green_val, uint8_t blue_val) {
+  rmt_data_t led_data[24];
+  // default WS2812B color order is G, R, B
+  int color[3] = {red_val, green_val, blue_val};
+  int i = 0;
+  for (int col = 0; col < 3; col++) {
+    for (int bit = 0; bit < 8; bit++) {
+      if ((color[col] & (1 << (7 - bit)))) {
+        // HIGH bit
+        led_data[i].level0 = 1;     // T1H
+        led_data[i].duration0 = 8;  // 0.8us
+        led_data[i].level1 = 0;     // T1L
+        led_data[i].duration1 = 4;  // 0.4us
+      } else {
+        // LOW bit
+        led_data[i].level0 = 1;     // T0H
+        led_data[i].duration0 = 4;  // 0.4us
+        led_data[i].level1 = 0;     // T0L
+        led_data[i].duration1 = 8;  // 0.8us
+      }
+      i++;
+    }
+  }
+  rmtWrite(38, led_data, RMT_SYMBOLS_OF(led_data), RMT_WAIT_FOR_EVER);
+}
+
 // 服务器回调类，用于处理连接和断开事件
 class MyServerCallbacks : public BLEServerCallbacks {
   void onConnect(BLEServer *pServer) {
     deviceConnected = true;
     Serial.println("Client connected successfully");
+    rgbLEDWrite(0,255,0);
   }
 
   void onDisconnect(BLEServer *pServer) {
@@ -37,6 +64,7 @@ class MyServerCallbacks : public BLEServerCallbacks {
     Serial.println("Client disconnected, restarting advertisement");
     // 立即重新开始广播，以便客户端可以重新连接
     pServer->getAdvertising()->start();
+    rgbLEDWrite(255,0,0);
   }
 };
 
@@ -92,15 +120,14 @@ void setup() {
   pAdvertising->setScanResponse(true);
   pServer->getAdvertising()->start();
 
-  Serial.println("Advertisement started, ready for connections");                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        
+  Serial.println("Advertisement started, ready for connections"); 
+  rmtInit(38, RMT_TX_MODE, RMT_MEM_NUM_BLOCKS_1, 10000000);                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       
 }
 
 void loop() {
   if (newDataAvailable) {
     // 重置标志位，防止重复处理
     newDataAvailable = false;
-
-    Serial.print("Ball dist received: ");
     Serial.println(received.ball_dist);
     Serial.println(received.ball_angle);
     Serial.println(received.robot_x);
