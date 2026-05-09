@@ -1,60 +1,32 @@
 #include <Arduino.h>
-#define ESP_SERIAL Serial6  
+#define ESP_SERIAL Serial6
 
-uint8_t max_port = 0;
-uint8_t distance_val = 0;
-uint8_t ball_possession = 0;
+// 球的資料（ 之後換成實際的感測器資料）
+uint8_t ball_dist  = 100;  // 0-255
+uint8_t ball_angle = 18;   // 1-36
+int8_t robot_x    = -50;   // -128到127
+int8_t robot_y    = 50;   // -128到127
 
 void setup() {
-  Serial.begin(115200);      // debug
-  ESP_SERIAL.begin(115200);  // 跟 ESP32 一樣 baud rate
-
-  delay(1000);
+  Serial.begin(115200);
+  ESP_SERIAL.begin(115200);
   Serial.println("Teensy Ready");
 }
 
 void loop() {
+  if (ESP_SERIAL.available() > 0) {
+    uint8_t data = ESP_SERIAL.read();
 
-  // =========================
-  // 1. request data from ESP32
-  // =========================
-  ESP_SERIAL.write(0xDD);
+    if (data == 0xAA) {
+      // 收到 0xAA，回送封包
+      ESP_SERIAL.write(0xBB);         // 起始
+      ESP_SERIAL.write(ball_dist);
+      ESP_SERIAL.write(ball_angle);
+      ESP_SERIAL.write(robot_x);
+      ESP_SERIAL.write(robot_y);
+      ESP_SERIAL.write(0xEE);         // 結尾
 
-  // =========================
-  // 2. wait for response
-  // =========================
-  if (ESP_SERIAL.available() >= 4) {
-
-    if (ESP_SERIAL.read() == 0xAA) {
-
-      uint8_t data = ESP_SERIAL.read();
-      uint8_t ball = ESP_SERIAL.read();
-      uint8_t endByte = ESP_SERIAL.read();
-
-      if (endByte == 0xEE) {
-
-        if (data != 0xFF) {
-          // valid data
-          distance_val = (data >> 4) & 0x0F;
-          max_port     = data & 0x0F;
-          ball_possession = ball;
-
-          Serial.print("Distance: ");
-          Serial.print(distance_val);
-
-          Serial.print(" | Port: ");
-          Serial.print(max_port);
-
-          Serial.print(" | Ball: ");
-          Serial.println(ball_possession);
-
-        } else {
-          // no ball detected
-          Serial.println("No ball detected");
-        }
-      }
+      Serial.println("Sent packet to ESP32");
     }
   }
-
-  delay(10); // control polling speed
 }
