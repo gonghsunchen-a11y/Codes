@@ -1,49 +1,36 @@
 #include <BLEDevice.h>
-#include <BLEServer.h>
-#include <BLEUtils.h>
 
-// 全局变量
-BLEServer *pServer = NULL;
-BLECharacteristic *pBrightnessCharacteristic = NULL;
+#define SERVICE_UUID                 "458063a1-02bf-4664-857e-16c1030be066"
+#define DATA_CHARACTERISTIC_UUID     "a5209632-66a9-411d-9353-9be5507790fa"
 
-bool deviceConnected = false;
-bool newDataAvailable = false;
 typedef struct {
   uint8_t ball_dist;
-  int8_t ball_angle;
-  uint8_t robot_x;
-  uint8_t robot_y;
-  uint8_t mode;
-} Packet;
+  uint8_t ball_angle;
+  int8_t robot_x;
+  int8_t robot_y;
+} RobotData;
 
-Packet received;
+RobotData myData;
 
-// LED 相关定义
-const int ledPin = 7; // LED 连接到 GPIO 7
+static bool doConnect = false;
+static bool connected = false;
+static BLEAddress *pServerAddress;
+static BLERemoteCharacteristic *pDataCharacteristic;
 
-// 为服务和特征定义唯一的 UUID
-#define SERVICE_UUID "458063a1-02bf-4664-857e-16c1030be066"
-#define BRIGHTNESS_CHARACTERISTIC_UUID "a5209632-66a9-411d-9353-9be5507790fa"
+#define TEENSY_SERIAL Serial0
 
-void rgbLEDWrite(uint8_t red_val, uint8_t green_val, uint8_t blue_val) {
+void rgbLEDWrite(uint8_t r, uint8_t g, uint8_t b) {
   rmt_data_t led_data[24];
-  // default WS2812B color order is G, R, B
-  int color[3] = {red_val, green_val, blue_val};
+  int color[3] = {r, g, b};
   int i = 0;
   for (int col = 0; col < 3; col++) {
     for (int bit = 0; bit < 8; bit++) {
-      if ((color[col] & (1 << (7 - bit)))) {
-        // HIGH bit
-        led_data[i].level0 = 1;     // T1H
-        led_data[i].duration0 = 8;  // 0.8us
-        led_data[i].level1 = 0;     // T1L
-        led_data[i].duration1 = 4;  // 0.4us
+      if (color[col] & (1 << (7 - bit))) {
+        led_data[i].level0 = 1; led_data[i].duration0 = 8;
+        led_data[i].level1 = 0; led_data[i].duration1 = 4;
       } else {
-        // LOW bit
-        led_data[i].level0 = 1;     // T0H
-        led_data[i].duration0 = 4;  // 0.4us
-        led_data[i].level1 = 0;     // T0L
-        led_data[i].duration1 = 8;  // 0.8us
+        led_data[i].level0 = 1; led_data[i].duration0 = 4;
+        led_data[i].level1 = 0; led_data[i].duration1 = 8;
       }
       i++;
     }
@@ -51,87 +38,121 @@ void rgbLEDWrite(uint8_t red_val, uint8_t green_val, uint8_t blue_val) {
   rmtWrite(38, led_data, RMT_SYMBOLS_OF(led_data), RMT_WAIT_FOR_EVER);
 }
 
-// 服务器回调类，用于处理连接和断开事件
-class MyServerCallbacks : public BLEServerCallbacks {
-  void onConnect(BLEServer *pServer) {
-    deviceConnected = true;
-    Serial.println("Client connected successfully");
-    rgbLEDWrite(0,255,0);
+class MyClientCallbacks : public BLEClientCallbacks {
+  void onConnect(BLEClient *pclient) {
+    connected = true;
+    rgbLEDWrite(0, 255, 0);
+    Serial.println("BLE Connected");
   }
-
-  void onDisconnect(BLEServer *pServer) {
-    deviceConnected = false;
-    Serial.println("Client disconnected, restarting advertisement");
-    // 立即重新开始广播，以便客户端可以重新连接
-    pServer->getAdvertising()->start();
-    rgbLEDWrite(255,0,0);
+  void onDisconnect(BLEClient *pclient) {
+    connected = false;
+    rgbLEDWrite(255, 0, 0);
+    Serial.println("BLE Disconnected");
   }
 };
 
-// 特征回调类，用于处理客户端的写入请求
-class MyBrightnessCallbacks : public BLECharacteristicCallbacks {
-
-  void onWrite(BLECharacteristic *pCharacteristic) {
-
-    String value = pCharacteristic->getValue();
-
-    if (value.length() == sizeof(Packet)) {
-
-      memcpy(&received, value.c_str(), sizeof(Packet));
-
-      newDataAvailable = true;
+class MyAdvertisedDeviceCallbacks : public BLEAdvertisedDeviceCallbacks {
+  void onResult(BLEAdvertisedDevice advertisedDevice) {
+    if (advertisedDevice.isAdvertisingService(BLEUUID(SERVICE_UUID))) {
+      Serial.println("Found Master ESP32");
+      advertisedDevice.getScan()->stop();
+      pServerAddress = new BLEAddress(advertisedDevice.getAddress());
+      doConnect = true;
     }
   }
 };
 
+bool connectToServer(BLEAddress pAddress) {
+  BLEClient *pClient = BLEDevice::createClient();
+  pClient->setClientCallbacks(new MyClientCallbacks());
+
+  if (!pClient->connect(pAddress)) {
+    Serial.println("Connection failed");
+    rgbLEDWrite(255, 0, 0);
+    return false;
+  }
+
+  BLERemoteService *pRemoteService = pClient->getService(SERVICE_UUID);
+  if (!pRemoteService) {
+    Serial.println("Service not found");
+    pClient->disconnect();
+    return false;
+  }
+
+  pDataCharacteristic = pRemoteService->getCharacteristic(DATA_CHARACTERISTIC_UUID);
+  if (!pDataCharacteristic) {
+    Serial.println("Characteristic not found");
+    pClient->disconnect();
+    return false;
+  }
+
+  connected = true;
+  rgbLEDWrite(0, 255, 0);
+  return true;
+}
+
 void setup() {
   Serial.begin(115200);
-  Serial.println("Starting ESP32 BLE LED Controller");
+  TEENSY_SERIAL.begin(115200, SERIAL_8N1, 44, 43); // RX=44, TX=43
+  delay(2000);
 
-  // 设置引脚为输出
-  pinMode(ledPin, OUTPUT);
+  rmtInit(38, RMT_TX_MODE, RMT_MEM_NUM_BLOCKS_1, 10000000);
+  rgbLEDWrite(255, 0, 0);
 
-  // 1. 初始化 BLE 设备
-  BLEDevice::init("ESP32_LED");
+  BLEDevice::init("");
+  BLEScan *pBLEScan = BLEDevice::getScan();
+  pBLEScan->setAdvertisedDeviceCallbacks(new MyAdvertisedDeviceCallbacks());
+  pBLEScan->setActiveScan(true);
+  pBLEScan->start(30, false);
 
-  // 2. 创建 BLE 服务器并设置回调
-  pServer = BLEDevice::createServer();
-  pServer->setCallbacks(new MyServerCallbacks());
-
-  // 3. 创建 BLE 服务
-  BLEService *pService = pServer->createService(SERVICE_UUID);
-
-  // 4. 创建 BLE 特征
-  pBrightnessCharacteristic = pService->createCharacteristic(
-    BRIGHTNESS_CHARACTERISTIC_UUID,
-    BLECharacteristic::PROPERTY_WRITE // 只允许写入
-  );
-
-  // 为特征设置写入回调
-  pBrightnessCharacteristic->setCallbacks(new MyBrightnessCallbacks());
-
-  // 5. 启动服务
-  pService->start();
-  Serial.println("BLE service started");
-
-  // 6. 启动广播
-  BLEAdvertising *pAdvertising = BLEDevice::getAdvertising();
-  pAdvertising->addServiceUUID(SERVICE_UUID);
-  pAdvertising->setScanResponse(true);
-  pServer->getAdvertising()->start();
-
-  Serial.println("Advertisement started, ready for connections"); 
-  rmtInit(38, RMT_TX_MODE, RMT_MEM_NUM_BLOCKS_1, 10000000);                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       
+  Serial.println("Slave ready");
 }
 
 void loop() {
-  if (newDataAvailable) {
-    // 重置标志位，防止重复处理
-    newDataAvailable = false;
-    Serial.println(received.ball_dist);
-    Serial.println(received.ball_angle);
-    Serial.println(received.robot_x);
-    Serial.println(received.robot_y);
-    Serial.println(received.mode);
+  // BLE 連線
+  if (doConnect) {
+    if (connectToServer(*pServerAddress)) {
+      Serial.println("Connected to Master");
+    } else {
+      Serial.println("Failed, retrying...");
+      delay(3000);
+      BLEDevice::getScan()->start(5, false);
+    }
+    doConnect = false;
   }
+
+  if (!connected) {
+    rgbLEDWrite(255, 0, 0);
+    return;
+  }
+
+  // 先發 0xAA 請求資料
+  TEENSY_SERIAL.write(0xAA);
+
+  // 等 Teensy 回應
+  unsigned long t = millis();
+  while (TEENSY_SERIAL.available() < 6) {
+    if (millis() - t > 100) break; // 100ms timeout
+  }
+
+  // 收 Teensy 資料
+  if (TEENSY_SERIAL.available() >= 6) {
+    if (TEENSY_SERIAL.read() == 0xBB) {
+      myData.ball_dist  = TEENSY_SERIAL.read();
+      myData.ball_angle = TEENSY_SERIAL.read();
+      myData.robot_x    = TEENSY_SERIAL.read();
+      myData.robot_y    = TEENSY_SERIAL.read();
+      uint8_t end       = TEENSY_SERIAL.read();
+
+      if (end == 0xEE) {
+        pDataCharacteristic->writeValue((uint8_t*)&myData, sizeof(myData), false);
+        Serial.print("Sent -> dist:"); Serial.print(myData.ball_dist);
+        Serial.print(" angle:");       Serial.print(myData.ball_angle);
+        Serial.print(" x:");           Serial.print(myData.robot_x);
+        Serial.print(" y:");           Serial.println(myData.robot_y);
+      }
+    }
+  }
+
+  delay(50);
 }
