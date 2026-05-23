@@ -1,0 +1,118 @@
+from maix import camera, display, image, uart, app
+import math
+
+
+cam = camera.Camera(320, 240, image.Format.FMT_RGB888)
+cam.set_awb(1)
+disp = display.Display()
+ser = uart.UART("/dev/ttyS1", 921600)
+
+
+BLUE_LAB   = [23, 67, -17, 25, -70, -28]
+YELLOW_LAB = [36, 82, -25, 16, 41, 86]
+
+
+W = 320
+H = 240
+CENTER_X = 160
+CENTER_Y = 120
+
+
+def calc_degree_omni(cx, cy):
+    dx = cx - CENTER_X
+    dy = cy - CENTER_Y
+    angle = math.degrees(math.atan2(dx, dy))
+    angle = (angle + 90) % 360
+    return round(angle, 1)
+
+
+def calc_distance_omni(cx, cy):
+    dx = cx - CENTER_X
+    dy = cy - CENTER_Y
+    r = math.sqrt(dx**2 + dy**2)
+    return int(r) if r > 0 else 65535
+
+
+def pack_uint16(v):
+    v = int(v) & 0xFFFF
+    return v & 0xFF, (v >> 8) & 0xFF
+
+
+while not app.need_exit():
+    img = cam.read()
+    if img is None:
+        continue
+
+
+    img = img.flip(image.FlipDir.X)
+
+
+    # ================= BLUE =================
+    blue = img.find_blobs([BLUE_LAB], merge=True)
+    best_b = max(blue, key=lambda b: b.pixels(), default=None)
+    if best_b:
+        blue_deg  = calc_degree_omni(best_b.cx(), best_b.cy())
+        blue_dist = calc_distance_omni(best_b.cx(), best_b.cy())
+    else:
+        blue_deg  = 65535
+        blue_dist = 65535
+
+
+    # ================= YELLOW =================
+    yellow = img.find_blobs([YELLOW_LAB], merge=True)
+    best_y = max(yellow, key=lambda y: y.pixels(), default=None)
+    if best_y:
+        yellow_deg  = calc_degree_omni(best_y.cx(), best_y.cy())
+        yellow_dist = calc_distance_omni(best_y.cx(), best_y.cy())
+    else:
+        yellow_deg  = 65535
+        yellow_dist = 65535
+
+
+    # ================= DEBUG print =================
+    print("BLUE  :", blue_deg, blue_dist)
+    print("YELLOW:", yellow_deg, yellow_dist)
+
+
+    # ================= 顯示 =================
+    disp_img = img.copy().flip(image.FlipDir.XY)
+
+
+    disp_img.draw_circle(CENTER_X, CENTER_Y, 5, image.Color.from_rgb(255, 255, 255), -1)
+
+
+    if best_b:
+        bx = W - 1 - best_b.x() - best_b.w()
+        by = H - 1 - best_b.y() - best_b.h()
+        disp_img.draw_rect(bx, by, best_b.w(), best_b.h(),
+                      image.Color.from_rgb(0, 0, 255), 2)
+        disp_img.draw_string(W - 1 - best_b.cx(), H - 1 - best_b.cy(),
+                        str(round(blue_deg, 1)),
+                        image.Color.from_rgb(0, 0, 255))
+
+
+    if best_y:
+        yx = W - 1 - best_y.x() - best_y.w()
+        yy = H - 1 - best_y.y() - best_y.h()
+        disp_img.draw_rect(yx, yy, best_y.w(), best_y.h(),
+                      image.Color.from_rgb(255, 255, 0), 2)
+        disp_img.draw_string(W - 1 - best_y.cx(), H - 1 - best_y.cy(),
+                        str(round(yellow_deg, 1)),
+                        image.Color.from_rgb(255, 255, 0))
+
+
+    disp_img.draw_string(5, 5,  f"B:{blue_deg} d:{blue_dist}",
+                    image.Color.from_rgb(100, 180, 255))
+    disp_img.draw_string(5, 20, f"Y:{yellow_deg} d:{yellow_dist}",
+                    image.Color.from_rgb(255, 220, 0))
+
+
+    disp.show(disp_img)
+
+
+    # ================= UART =================
+    data = []
+    for v in [blue_deg, blue_dist, yellow_deg, yellow_dist]:
+        l, h = pack_uint16(v)
+        data += [l, h]
+    ser.write(bytes([0xCC, *data, 0xEE]))

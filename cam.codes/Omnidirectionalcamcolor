@@ -1,0 +1,148 @@
+
+全像鏡
+from maix import camera, display, image, app
+import math
+
+
+cam = camera.Camera(320, 240, image.Format.FMT_RGB888)
+disp = display.Display()
+
+
+def rgb_to_lab(r, g, b):
+    def f(c):
+        c = c / 255.0
+        return ((c + 0.055) / 1.055) ** 2.4 if c > 0.04045 else c / 12.92
+    r, g, b = f(r), f(g), f(b)
+    x = r*0.4124 + g*0.3576 + b*0.1805
+    y = r*0.2126 + g*0.7152 + b*0.0722
+    z = r*0.0193 + g*0.1192 + b*0.9505
+    def ft(t):
+        return t**(1/3) if t > 0.008856 else 7.787*t + 16/116
+    fx, fy, fz = ft(x/0.9505), ft(y/1.000), ft(z/1.089)
+    L = 116*fy - 16
+    A = 500*(fx - fy)
+    B = 200*(fy - fz)
+    return round(L), round(A), round(B)
+
+
+# === 設定 ===
+cx_center, cy_center = 160, 120  # 畫面中心
+inner_r = 40                     # 扇環內徑
+outer_r = 100                    # 扇環外徑
+fan_center_deg = 0               # 扇形朝向角度（0=右, 90=下, 180=左, 270=上）
+fan_span = 100                   # 扇形總角度
+
+
+# 3個點：左邊緣、中間、右邊緣，在中間半徑上
+mid_r = (inner_r + outer_r) / 2
+angles = [
+    fan_center_deg - fan_span / 2,   # 左緣 -50度
+    fan_center_deg,                   # 中間
+    fan_center_deg + fan_span / 2,   # 右緣 +50度
+]
+
+
+sample_points = []
+for deg in angles:
+    rad = math.radians(deg)
+    x = int(cx_center + mid_r * math.cos(rad))
+    y = int(cy_center + mid_r * math.sin(rad))
+    sample_points.append((x, y))
+
+
+count = 0
+
+
+while not app.need_exit():
+    img = cam.read()
+    if img is None:
+        continue
+
+
+    data = img.to_bytes()
+    w = 320
+    L_vals, A_vals, B_vals = [], [], []
+
+
+    for (x, y) in sample_points:
+        idx = (y * w + x) * 3
+        r = data[idx]
+        g = data[idx + 1]
+        b = data[idx + 2]
+        L, A, B = rgb_to_lab(r, g, b)
+        L_vals.append(L)
+        A_vals.append(A)
+        B_vals.append(B)
+        img.draw_circle(x, y, 5, color=image.Color.from_rgb(255, 0, 0), thickness=2)
+
+
+    # 畫輔助圓弧（用多個點連線模擬弧線）
+    arc_pts = []
+    for i in range(21):
+        deg = (fan_center_deg - fan_span/2) + fan_span * i / 20
+        rad = math.radians(deg)
+        for rr in [inner_r, outer_r]:
+            ax = int(cx_center + rr * math.cos(rad))
+            ay = int(cy_center + rr * math.sin(rad))
+        arc_pts.append((int(cx_center + outer_r * math.cos(rad)),
+                        int(cy_center + outer_r * math.sin(rad))))
+
+
+    for i in range(len(arc_pts) - 1):
+        img.draw_line(arc_pts[i][0], arc_pts[i][1],
+                      arc_pts[i+1][0], arc_pts[i+1][1],
+                      color=image.Color.from_rgb(0, 255, 255), thickness=1)
+
+
+    # 畫兩條側邊線
+    for deg in [fan_center_deg - fan_span/2, fan_center_deg + fan_span/2]:
+        rad = math.radians(deg)
+        ix = int(cx_center + inner_r * math.cos(rad))
+        iy = int(cy_center + inner_r * math.sin(rad))
+        ox = int(cx_center + outer_r * math.cos(rad))
+        oy = int(cy_center + outer_r * math.sin(rad))
+        img.draw_line(ix, iy, ox, oy,
+                      color=image.Color.from_rgb(0, 255, 255), thickness=1)
+
+
+    margin = 20
+    threshold = [
+        min(L_vals)-margin, max(L_vals)+margin,
+        min(A_vals)-margin, max(A_vals)+margin,
+        min(B_vals)-margin, max(B_vals)+margin,
+    ]
+
+
+    goal_blobs = img.find_blobs(
+        [threshold], roi=(0, 0, 320, 240),
+        x_stride=5, y_stride=5,
+        area_threshold=10, merge=True
+    )
+
+
+    best_goal = None
+    if goal_blobs:
+        for b in goal_blobs:
+            if not best_goal or b.pixels() > best_goal.pixels():
+                best_goal = b
+
+
+    if best_goal:
+        img.draw_rect(best_goal.x(), best_goal.y(),
+                      best_goal.w(), best_goal.h(),
+                      color=image.Color.from_rgb(255, 255, 0), thickness=2)
+        img.draw_cross(best_goal.cx(), best_goal.cy(),
+                       color=image.Color.from_rgb(0, 255, 0), thickness=2)
+
+
+    count += 1
+    if count >= 30:
+        print(f"GOAL_LAB = {threshold}")
+        if best_goal:
+            print(f"goal found! cx={best_goal.cx()} cy={best_goal.cy()}")
+        else:
+            print("goal not found")
+        count = 0
+
+
+    disp.show(img)
