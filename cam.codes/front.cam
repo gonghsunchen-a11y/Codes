@@ -8,7 +8,7 @@ cam = camera.Camera(320, 240, image.Format.FMT_RGB888)
 
 cam.set_awb(1)           # 關閉自動白平衡
 disp = display.Display()
-ser = uart.UART("/dev/ttyS1", 921600)
+ser = uart.UART("/dev/ttyS0", 921600)
 
 
 # === 藍色球門 LAB 閾值 ===

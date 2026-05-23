@@ -1,9 +1,11 @@
-from maix import camera, display, image, app, time
+from maix import camera, display, image, app, time, uart
 import math
 
 cam = camera.Camera(320, 240, image.Format.FMT_RGB888)
 cam.set_awb(1)
 disp = display.Display()
+
+ser = uart.UART("/dev/ttyS0", 921600)
 
 YELLOW_LAB = [63, 107, -33, 8, 63, 107]
 BLUE_LAB = [18, 60, -17, 26, -65, -23]
@@ -19,9 +21,14 @@ A, B, C = 0.00113172720270608, 850.7345431, -20.336502089003
 hists = { "yellow": [], "blue": [] }
 HIST_N = 5
 
+#半場距離
+YG = 90
+
 def blob_radius(b):
     return math.hypot(b.cx() - CENTER_X, b.cy() - CENTER_Y)
-
+def pack_int16(v):
+    v = int(v)
+    return (v & 0xFF, (v >> 8) & 0xFF)
 
 while not app.need_exit():
     img = cam.read()
@@ -90,27 +97,26 @@ while not app.need_exit():
     else: hists["blue"].clear()
 
     
-    YG = 90
 
     robot_x, robot_y = 0.0, 0.0
-
+    status = 0
 
     if pos_y and pos_b:
         x_y, y_y = pos_y
         x_b, y_b = pos_b
         robot_x = (x_y + x_b) * 0.5 
-        robot_y = -(y_y + y_b) * 0.5 # 或 (dist_y - dist_b) * 0.5
+        robot_y = -(y_y + y_b) * 0.5 
+        status = 2
         #print(f"World Pos: X={robot_x:.1f}, Y={robot_y:.1f}")
-    if pos_y and not pos_b:
+    elif pos_y and not pos_b:
     # 已知黃門位置 (x_y, y_y)
     # 推算藍門位置：因為球門對稱，藍門應在黃門對稱點
-    # 這裡 YG 是你的球門 Y 座標 (如 90.0)
     # 將黃門向量反轉即可得到虛擬藍門
         x_y,y_y = pos_y
         x_b_virt = -x_y
-        y_b_virt = -y_y + (2 * YG ) # 根據 ATTACK_SIDE 調整位置
-        
-        # 現在你有兩個點了，繼續套用你的中心投影法
+        y_b_virt = -y_y + (2 * YG ) 
+        status = 1
+
         robot_x = (x_y - x_b_virt) * 0.5
         robot_y = -(y_y - y_b_virt) * 0.5
         print(f"World Pos: X={robot_x:.1f}, Y={robot_y:.1f}")
@@ -119,7 +125,8 @@ while not app.need_exit():
         x_b,y_b = pos_b
         x_y_virt = -x_b
         y_y_virt = -y_b - (2 * YG )
-        
+        status = 1
+
         robot_x = (x_y_virt - x_b) * 0.5
         robot_y = -(y_y_virt - y_b) * 0.5
         print(f"World Pos: X={robot_x:.1f}, Y={robot_y:.1f}")
@@ -127,4 +134,17 @@ while not app.need_exit():
     #disp.show(img)              # Show image to screen                               # | 将图像显示到屏幕
     #fps = time.fps()            # Calculate FPS between last time fps() call and this time call.                             # | 计算两次 fps 函数调用之间的帧率
     #print(f"time: {1000/fps:.02f}ms, fps: {fps:.02f}")
+
+    #packet
+    rx0, rx1 = pack_int16(robot_x)
+    ry0, ry1 = pack_int16(robot_y)
+    packet = bytes([
+        0xCC,
+        rx0, rx1,
+        ry0, ry1,
+        status,
+        0xEE
+    ])
+    ser.write(packet)
+
     disp.show(img)
