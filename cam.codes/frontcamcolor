@@ -1,105 +1,36 @@
-from maix import camera, display, image, uart, app, time
-import struct
+from maix import camera, display, image, app, time
 
-# === 硬體初始化 ===
+
 cam = camera.Camera(320, 240, image.Format.FMT_RGB888)
-cam.set_awb(1)
+cam.set_awb(0) 
 disp = display.Display()
-ser = uart.UART("/dev/ttyS0", 921600)
-
-# === 相機參數 ===
-CAMERA_WIDTH = 320
-CAMERA_FOV = 68.0
-TRUE_GOAL_CENTER = CAMERA_WIDTH // 2
-
-# === 球門顏色 LAB 閾值 ===
-GOAL_LAB = [18, 62, -8, 34, -75, -32]
-goal_roi = (0, 0, 320, 240)
-
-# === 半場判斷遲滯 ===
-# gh >= ENTER_HALF_GH 才進入攻擊半場
-# gh <= EXIT_HALF_GH 才離開攻擊半場
-# 這樣可以避免 gh 在臨界值附近時一直開關
-ENTER_HALF_GH = 24
-EXIT_HALF_GH = 16
-
-# === 轉頭角度限制與平滑 ===
-MAX_OFFSET = 35
-OFFSET_SMOOTH_NUM = 2
-OFFSET_SMOOTH_DEN = 10
-
-# === 穩定判斷參數 ===
-LOST_LIMIT = 2             # 連續看不到幾幀後才真的判定丟失
-SIDE_STABLE_FRAMES = 2     # 新方向連續出現幾幀才切換
-HYSTERESIS = 20            # 左右空檔切換緩衝，防止抖動
-
-# === blob 過濾參數 ===
-MIN_GOAL_PIXELS = 30
-MIN_PART_AREA = 5
-CENTER_SHOOT_WIDTH = 140
-
-# === 狀態變數 ===
-current_side = 3           # 1=右，2=左，3=中
-candidate_side = 3
-candidate_count = 0
-lost_counter = 0
-in_attack_half = False
-smooth_offset = 0
-frame_count = 0
-
-# 上一次有效資料，用於短暫丟失畫面時保持輸出
-last_gx = 65535
-last_gy = 65535
-last_gw = 0
-last_gh = 0
-last_shoot_x = 65535
-last_shoot_side = 0
 
 
-def pack_uint16(val):
-    # 將 0~65535 拆成低位元、高位元，方便 UART 傳輸
-    v = int(val) & 0xFFFF
-    return v & 0xFF, (v >> 8) & 0xFF
+def rgb_to_lab(r, g, b):
+    def f(c):
+        c = c / 255.0
+        return ((c + 0.055) / 1.055) ** 2.4 if c > 0.04045 else c / 12.92
+    r, g, b = f(r), f(g), f(b)
+    x = r*0.4124 + g*0.3576 + b*0.1805
+    y = r*0.2126 + g*0.7152 + b*0.0722
+    z = r*0.0193 + g*0.1192 + b*0.9505
+    def ft(t):
+        return t**(1/3) if t > 0.008856 else 7.787*t + 16/116
+    fx, fy, fz = ft(x/0.9505), ft(y/1.000), ft(z/1.089)
+    L = 116*fy - 16
+    A = 500*(fx - fy)
+    B = 200*(fy - fz)
+    return round(L), round(A), round(B)
 
 
-def clamp(val, lo, hi):
-    # 限制數值範圍，避免 offset 或座標突然爆掉
-    if val < lo:
-        return lo
-    if val > hi:
-        return hi
-    return val
+sample_points = [
+    (120, 90),  (160, 90),  (200, 90),
+    (120, 120), (160, 120), (200, 120),
+    (120, 150), (160, 150), (200, 150),
+]
 
 
-def choose_stable_side(new_side):
-    # 方向切換保護：
-    # 新方向必須連續出現 SIDE_STABLE_FRAMES 幀，才真正切換 current_side
-    global current_side, candidate_side, candidate_count
-
-    if new_side == current_side:
-        candidate_side = new_side
-        candidate_count = 0
-        return current_side
-
-    if new_side == candidate_side:
-        candidate_count += 1
-    else:
-        candidate_side = new_side
-        candidate_count = 1
-
-    if candidate_count >= SIDE_STABLE_FRAMES:
-        current_side = candidate_side
-        candidate_count = 0
-
-    return current_side
-
-
-def checksum_packet(data):
-    # 簡單 checksum：payload 所有 byte 相加後取低 8 bit
-    s = 0
-    for b in data:
-        s = (s + b) & 0xFF
-    return s
+count = 0
 
 
 while not app.need_exit():
@@ -107,301 +38,63 @@ while not app.need_exit():
     if img is None:
         continue
 
-    frame_count += 1
 
-    # === 找出球門主體 ===
+    data = img.to_bytes()
+    w = 320
+    L_vals, A_vals, B_vals = [], [], []
+
+
+    for (x, y) in sample_points:
+        idx = (y * w + x) * 3
+        r = data[idx]
+        g = data[idx + 1]
+        b = data[idx + 2]
+        L, A, B = rgb_to_lab(r, g, b)
+        L_vals.append(L)
+        A_vals.append(A)
+        B_vals.append(B)
+        img.draw_circle(x, y, 5, color=image.Color.from_rgb(255, 0, 0), thickness=2)
+
+
+    margin = 20
+    threshold = [
+        min(L_vals)-margin, max(L_vals)+margin,
+        min(A_vals)-margin, max(A_vals)+margin,
+        min(B_vals)-margin, max(B_vals)+margin,
+    ]
+
+
     goal_blobs = img.find_blobs(
-        [GOAL_LAB],
-        roi=goal_roi,
-        x_stride=5,
-        y_stride=5,
-        area_threshold=10,
-        merge=True
+        [threshold], roi=(0, 0, 320, 240),
+        x_stride=5, y_stride=5,
+        area_threshold=10, merge=True
     )
+
 
     best_goal = None
     if goal_blobs:
         for b in goal_blobs:
-            if b.pixels() < MIN_GOAL_PIXELS:
-                continue
             if not best_goal or b.pixels() > best_goal.pixels():
                 best_goal = b
 
-    # 每一幀先給預設值，避免上一幀資料殘留造成誤判
-    gx = 65535
-    gy = 65535
-    gw = 0
-    gh = 0
-    shoot_x = 65535
-    shoot_side = 0
-    left_width = 0
-    right_width = 0
-    target_offset = 0
 
     if best_goal:
-        lost_counter = 0
+        img.draw_rect(best_goal.x(), best_goal.y(),
+                      best_goal.w(), best_goal.h(),
+                      color=image.Color.from_rgb(0, 255, 255), thickness=2)
+        img.draw_cross(best_goal.cx(), best_goal.cy(),
+                       color=image.Color.from_rgb(0, 255, 0), thickness=2)
 
-        gx = best_goal.cx()
-        gy = best_goal.cy()
-        gw = best_goal.w()
-        gh = best_goal.h()
 
-        # === 半場狀態判斷 ===
-        # 使用 gh 遲滯，不讓狀態在臨界值附近來回跳
-        if not in_attack_half and gh >= ENTER_HALF_GH:
-            in_attack_half = True
-        elif in_attack_half and gh <= EXIT_HALF_GH:
-            in_attack_half = False
-
-        # === 掃描球門中上段的一條水平區域 ===
-        # 目的是判斷左/右哪邊露出的球門空間比較大
-        scan_y = best_goal.y() + best_goal.h() // 3
-        scan_y = clamp(scan_y, 0, 239)
-        scan_h = 8
-
-        if scan_y + scan_h > 240:
-            scan_h = 240 - scan_y
-
-        scan_roi = (0, scan_y, 320, scan_h)
-
-        parts = img.find_blobs(
-            [GOAL_LAB],
-            roi=scan_roi,
-            x_stride=2,
-            y_stride=2,
-            area_threshold=MIN_PART_AREA,
-            merge=False
-        )
-
-        # 過濾掉不合理的小片段
-        valid_parts = []
-        if parts:
-            for p in parts:
-                if p.w() <= 0 or p.h() <= 0:
-                    continue
-                valid_parts.append(p)
-
-        if valid_parts:
-            left_edge = min(p.x() for p in valid_parts)
-            right_edge = max(p.x() + p.w() for p in valid_parts)
-            goal_center = (left_edge + right_edge) // 2
-
-            left_segments = []
-            right_segments = []
-
-            # 以偵測到的球門中心，把色塊片段分成左半與右半
-            for p in valid_parts:
-                x1 = p.x()
-                x2 = p.x() + p.w()
-
-                if p.cx() < goal_center:
-                    left_segments.append((x1, x2))
-                else:
-                    right_segments.append((x1, x2))
-
-            # 用區段外框估算左右可見寬度，比單純加總 blob 寬度穩定
-            if left_segments:
-                left_min = min(s[0] for s in left_segments)
-                left_max = max(s[1] for s in left_segments)
-                left_width = left_max - left_min
-            else:
-                left_min = left_edge
-                left_max = goal_center
-                left_width = 0
-
-            if right_segments:
-                right_min = min(s[0] for s in right_segments)
-                right_max = max(s[1] for s in right_segments)
-                right_width = right_max - right_min
-            else:
-                right_min = goal_center
-                right_max = right_edge
-                right_width = 0
-
-            # === 決定射門方向 ===
-            # 1=右，2=左，3=中
-            if len(valid_parts) == 1 and (right_edge - left_edge) > CENTER_SHOOT_WIDTH:
-                decided_side = 3
-            else:
-                if current_side == 2:
-                    if right_width > left_width + HYSTERESIS:
-                        decided_side = 1
-                    else:
-                        decided_side = 2
-                elif current_side == 1:
-                    if left_width > right_width + HYSTERESIS:
-                        decided_side = 2
-                    else:
-                        decided_side = 1
-                else:
-                    if left_width > right_width:
-                        decided_side = 2
-                    elif right_width > left_width:
-                        decided_side = 1
-                    else:
-                        decided_side = 3
-
-            # 方向必須連續穩定後才真正切換
-            shoot_side = choose_stable_side(decided_side)
-
-            # === 依照方向算射門目標點 shoot_x ===
-            if shoot_side == 2:
-                if left_width > 0:
-                    shoot_x = left_min + left_width // 2
-                else:
-                    shoot_x = (left_edge + goal_center) // 2
-            elif shoot_side == 1:
-                if right_width > 0:
-                    shoot_x = right_min + right_width // 2
-                else:
-                    shoot_x = (goal_center + right_edge) // 2
-            else:
-                shoot_side = 3
-                shoot_x = goal_center
-
-            shoot_x = clamp(shoot_x, 0, 319)
-
-            # === 角度偏移計算 ===
-            # 只有進入攻擊半場後才允許轉頭
-            if in_attack_half:
-                pixel_diff = shoot_x - TRUE_GOAL_CENTER
-                raw_offset = pixel_diff * (CAMERA_FOV / CAMERA_WIDTH)
-
-                # 右邊 pixel_diff 為正，但車頭右轉角度要變小，所以取負號
-                target_offset = int(-raw_offset)
-                target_offset = clamp(target_offset, -MAX_OFFSET, MAX_OFFSET)
-            else:
-                target_offset = 0
-
-            # offset 平滑，避免角度一幀一幀跳太大
-            smooth_offset = (
-                (smooth_offset * OFFSET_SMOOTH_NUM + target_offset * (OFFSET_SMOOTH_DEN - OFFSET_SMOOTH_NUM))
-                // OFFSET_SMOOTH_DEN
-            )
-            target_offset = smooth_offset
-
-            # === 畫面 Debug ===
-            img.draw_line(
-                left_edge, scan_y,
-                right_edge, scan_y,
-                color=image.Color.from_rgb(255, 0, 255),
-                thickness=2
-            )
-            img.draw_cross(
-                shoot_x, scan_y,
-                color=image.Color.from_rgb(255, 0, 0),
-                thickness=2
-            )
-
-            # 記錄這一幀有效結果，給短暫丟失時使用
-            last_gx = gx
-            last_gy = gy
-            last_gw = gw
-            last_gh = gh
-            last_shoot_x = shoot_x
-            last_shoot_side = shoot_side
-
+    # 每 30 幀 print 一次
+    count += 1
+    if count >= 30:
+        print(f"GOAL_LAB = {threshold}")
+        if best_goal:
+            print(f"goal found! cx={best_goal.cx()} cy={best_goal.cy()}")
         else:
-            # 看得到球門，但掃描線沒有抓到 parts
-            lost_counter += 1
+            print("goal not found")
+        count = 0
 
-            if lost_counter <= LOST_LIMIT:
-                # 短暫丟失時沿用上一筆有效資料
-                gx = last_gx
-                gy = last_gy
-                gw = last_gw
-                gh = last_gh
-                shoot_x = last_shoot_x
-                shoot_side = last_shoot_side
-
-                smooth_offset = smooth_offset * 5 // 10
-                target_offset = smooth_offset
-            else:
-                # 連續丟失太久才重置狀態
-                current_side = 3
-                candidate_side = 3
-                candidate_count = 0
-                smooth_offset = 0
-                target_offset = 0
-                shoot_side = 0
-                shoot_x = 65535
-
-        # 畫出球門外框
-        img.draw_rect(
-            best_goal.x(),
-            best_goal.y(),
-            best_goal.w(),
-            best_goal.h(),
-            color=image.Color.from_rgb(0, 255, 255),
-            thickness=2
-        )
-        img.draw_cross(
-            gx,
-            gy,
-            color=image.Color.from_rgb(0, 255, 0),
-            thickness=2
-        )
-
-    else:
-        # 完全看不到球門
-        lost_counter += 1
-
-        if lost_counter <= LOST_LIMIT:
-            gx = last_gx
-            gy = last_gy
-            gw = last_gw
-            gh = last_gh
-            shoot_x = last_shoot_x
-            shoot_side = last_shoot_side
-            smooth_offset = smooth_offset * 8 // 10
-            target_offset = smooth_offset
-        else:
-            gx = 65535
-            gy = 65535
-            gw = 0
-            gh = 0
-            shoot_x = 65535
-            shoot_side = 0
-            current_side = 3
-            candidate_side = 3
-            candidate_count = 0
-            in_attack_half = False
-            smooth_offset = 0
-            target_offset = 0
-
-    # 降低 print 頻率，避免每幀輸出拖慢 FPS
-    if frame_count % 5 == 0:
-        print(
-            f"Side={shoot_side} Offset={target_offset} "
-            f"gh={gh} gw={gw} shoot_x={shoot_x} "
-            f"half={1 if in_attack_half else 0} lost={lost_counter}"
-        )
 
     disp.show(img)
-
-    # === UART 封包傳送 ===
-    gx0, gx1 = pack_uint16(gx)
-    gy0, gy1 = pack_uint16(gy)
-    gw0, gw1 = pack_uint16(gw)
-    gh0, gh1 = pack_uint16(gh)
-
-    # offset 是 int16，所以用 struct.pack 保留正負號
-    target_offset = clamp(target_offset, -MAX_OFFSET, MAX_OFFSET)
-    offset_bytes = struct.pack('<h', int(target_offset))    
-
-    payload = bytes([
-        gx0, gx1,
-        gy0, gy1,
-        gw0, gw1,
-        gh0, gh1,
-        offset_bytes[0], offset_bytes[1],
-        shoot_side
-    ])
-
-    chk = checksum_packet(payload)
-
-    # 新封包格式：
-    # 0xCC + payload 11 bytes + checksum + 0xEE
-    # 總長度 14 bytes
-    packet = bytes([0xCC]) + payload + bytes([chk, 0xEE])
-    ser.write(packet)
