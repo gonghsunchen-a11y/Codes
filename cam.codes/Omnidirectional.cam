@@ -12,7 +12,7 @@ BLUE_LAB = [18, 60, -17, 26, -65, -23]
 
 W, H = 320, 240
 CENTER_X, CENTER_Y = 160, 120
-R_MIN, R_MAX = 30, 125
+R_MIN, R_MAX = 30, 120
 
 # 係數
 A, B, C = 0.00113172720270608, 850.7345431, -20.336502089003
@@ -23,6 +23,7 @@ HIST_N = 5
 
 #半場距離
 YG = 90
+ATTACK_Side = 1 #1進攻黃門 -1藍門
 
 def blob_radius(b):
     return math.hypot(b.cx() - CENTER_X, b.cy() - CENTER_Y)
@@ -34,6 +35,7 @@ while not app.need_exit():
     img = cam.read()
     if img is None: continue
     img = img.flip(image.FlipDir.X)
+    img = img.flip(image.FlipDir.Y)
 
     blobs = img.find_blobs([YELLOW_LAB, BLUE_LAB], merge=True)
    
@@ -69,7 +71,7 @@ while not app.need_exit():
         img.draw_rect(best_y.x(), best_y.y(), best_y.w(), best_y.h(), image.Color.from_rgb(255, 255, 0), 2)
         # 繪製連線 (從中心到球門中心)
         img.draw_line(CENTER_X, CENTER_Y, best_y.cx(), best_y.cy(), image.Color.from_rgb(255, 255, 255), 1)
-        #print(f"[YELLOW] Dist: {dist_y:.1f} cm, Ang: {ang_deg_y:.1f} deg")
+        print(f"[YELLOW] Dist: {dist_y:.1f} cm, Ang: {ang_deg_y:.1f} deg")
     else: hists["yellow"].clear()
 
     # 處理藍球門
@@ -104,31 +106,33 @@ while not app.need_exit():
     if pos_y and pos_b:
         x_y, y_y = pos_y
         x_b, y_b = pos_b
-        robot_x = (x_y + x_b) * 0.5 
+        robot_x = -(x_y + x_b) * 0.5 
         robot_y = -(y_y + y_b) * 0.5 
         status = 2
-        #print(f"World Pos: X={robot_x:.1f}, Y={robot_y:.1f}")
+        print(f"World Pos: X={robot_x:.1f}, Y={robot_y:.1f}")
     elif pos_y and not pos_b:
     # 已知黃門位置 (x_y, y_y)
     # 推算藍門位置：因為球門對稱，藍門應在黃門對稱點
     # 將黃門向量反轉即可得到虛擬藍門
         x_y,y_y = pos_y
         x_b_virt = -x_y
-        y_b_virt = -y_y + (2 * YG ) 
+        y_b_virt = -y_y + (2 * YG * ATTACK_Side ) 
         status = 1
 
-        robot_x = (x_y - x_b_virt) * 0.5
+        robot_x = -(x_y - x_b_virt) * 0.5
         robot_y = -(y_y - y_b_virt) * 0.5
+        
         print(f"World Pos: X={robot_x:.1f}, Y={robot_y:.1f}")
     elif not pos_y and pos_b:
         # 如果只看到藍門，同理推算黃門虛擬座標
         x_b,y_b = pos_b
         x_y_virt = -x_b
-        y_y_virt = -y_b - (2 * YG )
+        y_y_virt = -y_b - (2 * YG * ATTACK_Side )
         status = 1
 
         robot_x = (x_y_virt - x_b) * 0.5
-        robot_y = -(y_y_virt - y_b) * 0.5
+        robot_y = (y_y_virt - y_b) * 0.5
+
         print(f"World Pos: X={robot_x:.1f}, Y={robot_y:.1f}")
     #img = cam.read()            # Get one frame from camera, img is maix.image.Image type object                               # | 从摄像头获取一帧图像，img 是 maix.image.Image 类型的对象
     #disp.show(img)              # Show image to screen                               # | 将图像显示到屏幕

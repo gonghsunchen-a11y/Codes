@@ -1,100 +1,156 @@
-from maix import camera, display, image, app, time
-
+from maix import camera, display, image, app, time, uart
+import math
 
 cam = camera.Camera(320, 240, image.Format.FMT_RGB888)
-cam.set_awb(0) 
+cam.set_awb(1)
 disp = display.Display()
 
+ser = uart.UART("/dev/ttyS0", 921600)
 
-def rgb_to_lab(r, g, b):
-    def f(c):
-        c = c / 255.0
-        return ((c + 0.055) / 1.055) ** 2.4 if c > 0.04045 else c / 12.92
-    r, g, b = f(r), f(g), f(b)
-    x = r*0.4124 + g*0.3576 + b*0.1805
-    y = r*0.2126 + g*0.7152 + b*0.0722
-    z = r*0.0193 + g*0.1192 + b*0.9505
-    def ft(t):
-        return t**(1/3) if t > 0.008856 else 7.787*t + 16/116
-    fx, fy, fz = ft(x/0.9505), ft(y/1.000), ft(z/1.089)
-    L = 116*fy - 16
-    A = 500*(fx - fy)
-    B = 200*(fy - fz)
-    return round(L), round(A), round(B)
+YELLOW_LAB = [63, 107, -33, 8, 63, 107]
+BLUE_LAB = [18, 60, -17, 26, -65, -23]
 
+W, H = 320, 240
+CENTER_X, CENTER_Y = 160, 120
+R_MIN, R_MAX = 30, 120
 
-sample_points = [
-    (120, 90),  (160, 90),  (200, 90),
-    (120, 120), (160, 120), (200, 120),
-    (120, 150), (160, 150), (200, 150),
-]
+# 係數
+A, B, C = 0.00113172720270608, 850.7345431, -20.336502089003
 
+# 獨立平滑歷史
+hists = { "yellow": [], "blue": [] }
+HIST_N = 5
 
-count = 0
+#半場距離
+YG = 90
+ATTACK_Side = 1 #1進攻黃門 -1藍門
 
+def blob_radius(b):
+    return math.hypot(b.cx() - CENTER_X, b.cy() - CENTER_Y)
+def pack_int16(v):
+    v = int(v)
+    if v < 0:
+        v += 65536
+    return (v & 0xFF, (v >> 8) & 0xFF)
 
 while not app.need_exit():
     img = cam.read()
-    if img is None:
-        continue
+    if img is None: continue
+    img = img.flip(image.FlipDir.X)
+    img = img.flip(image.FlipDir.Y)
+
+    blobs = img.find_blobs([YELLOW_LAB, BLUE_LAB], merge=True)
+   
+    best_y = max([b for b in blobs if b.code() == 1 and R_MIN <= blob_radius(b) <= R_MAX], key=lambda b: b.pixels(), default=None)
+    best_b = max([b for b in blobs if b.code() == 2 and R_MIN <= blob_radius(b) <= R_MAX], key=lambda b: b.pixels(), default=None)
+
+    # 繪製參考圈
+    img.draw_circle(CENTER_X, CENTER_Y, R_MIN, image.Color.from_rgb(0, 255, 0), 1)
+    img.draw_circle(CENTER_X, CENTER_Y, R_MAX, image.Color.from_rgb(255, 0, 0), 1)
+    img.draw_cross(CENTER_X, CENTER_Y, image.Color.from_rgb(255, 255, 255), 8, 1)
+
+    pos_y = None # 格式: (x_rel, y_rel)
+    pos_b = None
+    
+    # 處理黃球門
+    if best_y:
+        r_y = blob_radius(best_y)
+        hists["yellow"].append(r_y)
+        if len(hists["yellow"]) > HIST_N: hists["yellow"].pop(0)
+        
+        r_avg_y = sum(hists["yellow"]) / len(hists["yellow"])
+        dist_y = max((A * (r_avg_y ** 2)) + (B / math.sqrt(best_y.pixels())) + C, 10.0)
+        
+        ang_rad_y = math.atan2(best_y.cy() - CENTER_Y, best_y.cx() - CENTER_X)
+        ang_deg_y = (math.degrees(ang_rad_y)) % 360
+
+        x_rel = dist_y * math.cos(ang_rad_y)  # 右為正
+        y_rel = dist_y * math.sin(ang_rad_y)  # 前為正
+        pos_y = (x_rel,y_rel)
 
 
-    data = img.to_bytes()
-    w = 320
-    L_vals, A_vals, B_vals = [], [], []
+        img.draw_rect(best_y.x(), best_y.y(), best_y.w(), best_y.h(), image.Color.from_rgb(0, 0, 0), 4)
+        img.draw_rect(best_y.x(), best_y.y(), best_y.w(), best_y.h(), image.Color.from_rgb(255, 255, 0), 2)
+        # 繪製連線 (從中心到球門中心)
+        img.draw_line(CENTER_X, CENTER_Y, best_y.cx(), best_y.cy(), image.Color.from_rgb(255, 255, 255), 1)
+        print(f"[YELLOW] Dist: {dist_y:.1f} cm, Ang: {ang_deg_y:.1f} deg")
+    else: hists["yellow"].clear()
 
+    # 處理藍球門
+    if best_b:
+        r_b = blob_radius(best_b)
+        hists["blue"].append(r_b)
+        if len(hists["blue"]) > HIST_N: hists["blue"].pop(0)
+        
+        r_avg_b = sum(hists["blue"]) / len(hists["blue"])
+        dist_b = max((A * (r_avg_b ** 2)) + (B / math.sqrt(best_b.pixels())) + C, 10.0)
+        
+        ang_rad_b = math.atan2(best_b.cy() - CENTER_Y, best_b.cx() - CENTER_X)
+        ang_deg_b = (math.degrees(ang_rad_b)) % 360
+        
+        x_rel = dist_b * math.cos(ang_rad_b)  # 右為正
+        y_rel = dist_b * math.sin(ang_rad_b)  # 前為正
+        pos_b = (x_rel, y_rel)
+        
+        img.draw_rect(best_b.x(), best_b.y(), best_b.w(), best_b.h(), image.Color.from_rgb(0, 0, 0), 4)
+        img.draw_rect(best_b.x(), best_b.y(), best_b.w(), best_b.h(), image.Color.from_rgb(0, 165, 255), 2)
+        
+        # 繪製連線
+        img.draw_line(CENTER_X, CENTER_Y, best_b.cx(), best_b.cy(), image.Color.from_rgb(255, 255, 255), 1)
+        #print(f"[BLUE]   Dist: {dist_b:.1f} cm, Ang: {ang_deg_b:.1f} deg")
+    else: hists["blue"].clear()
 
-    for (x, y) in sample_points:
-        idx = (y * w + x) * 3
-        r = data[idx]
-        g = data[idx + 1]
-        b = data[idx + 2]
-        L, A, B = rgb_to_lab(r, g, b)
-        L_vals.append(L)
-        A_vals.append(A)
-        B_vals.append(B)
-        img.draw_circle(x, y, 5, color=image.Color.from_rgb(255, 0, 0), thickness=2)
+    
 
+    robot_x, robot_y = 0.0, 0.0
+    status = 0
 
-    margin = 20
-    threshold = [
-        min(L_vals)-margin, max(L_vals)+margin,
-        min(A_vals)-margin, max(A_vals)+margin,
-        min(B_vals)-margin, max(B_vals)+margin,
-    ]
+    if pos_y and pos_b:
+        x_y, y_y = pos_y
+        x_b, y_b = pos_b
+        robot_x = -(x_y + x_b) * 0.5 
+        robot_y = -(y_y + y_b) * 0.5 
+        status = 2
+        print(f"World Pos: X={robot_x:.1f}, Y={robot_y:.1f}")
+    elif pos_y and not pos_b:
+    # 已知黃門位置 (x_y, y_y)
+    # 推算藍門位置：因為球門對稱，藍門應在黃門對稱點
+    # 將黃門向量反轉即可得到虛擬藍門
+        x_y,y_y = pos_y
+        x_b_virt = x_y
+        y_b_virt = -y_y + (2 * YG * ATTACK_Side ) 
+        status = 1
 
+        robot_x = -(x_y + x_b_virt) * 0.5
+        robot_y = (y_b_virt - y_y ) * 0.5
+        
+        print(f"World Pos: X={robot_x:.1f}, Y={robot_y:.1f}")
+    elif not pos_y and pos_b:
+        # 如果只看到藍門，同理推算黃門虛擬座標
+        x_b,y_b = pos_b
+        x_y_virt = x_b
+        y_y_virt = -y_b - (2 * YG * ATTACK_Side )
+        status = 1
 
-    goal_blobs = img.find_blobs(
-        [threshold], roi=(0, 0, 320, 240),
-        x_stride=5, y_stride=5,
-        area_threshold=10, merge=True
-    )
+        robot_x = -(x_y_virt + x_b) * 0.5
+        robot_y = (y_y_virt - y_b) * 0.5
 
+        print(f"World Pos: X={robot_x:.1f}, Y={robot_y:.1f}")
+    #img = cam.read()            # Get one frame from camera, img is maix.image.Image type object                               # | 从摄像头获取一帧图像，img 是 maix.image.Image 类型的对象
+    #disp.show(img)              # Show image to screen                               # | 将图像显示到屏幕
+    #fps = time.fps()            # Calculate FPS between last time fps() call and this time call.                             # | 计算两次 fps 函数调用之间的帧率
+    #print(f"time: {1000/fps:.02f}ms, fps: {fps:.02f}")
 
-    best_goal = None
-    if goal_blobs:
-        for b in goal_blobs:
-            if not best_goal or b.pixels() > best_goal.pixels():
-                best_goal = b
-
-
-    if best_goal:
-        img.draw_rect(best_goal.x(), best_goal.y(),
-                      best_goal.w(), best_goal.h(),
-                      color=image.Color.from_rgb(0, 255, 255), thickness=2)
-        img.draw_cross(best_goal.cx(), best_goal.cy(),
-                       color=image.Color.from_rgb(0, 255, 0), thickness=2)
-
-
-    # 每 30 幀 print 一次
-    count += 1
-    if count >= 30:
-        print(f"GOAL_LAB = {threshold}")
-        if best_goal:
-            print(f"goal found! cx={best_goal.cx()} cy={best_goal.cy()}")
-        else:
-            print("goal not found")
-        count = 0
-
+    #packet
+    rx0, rx1 = pack_int16(robot_x)
+    ry0, ry1 = pack_int16(robot_y)
+    packet = bytes([
+        0xCC,
+        rx0, rx1,
+        ry0, ry1,
+        status,
+        0xEE
+    ])
+    ser.write(packet)
 
     disp.show(img)
