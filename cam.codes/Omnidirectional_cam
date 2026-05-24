@@ -29,6 +29,8 @@ def blob_radius(b):
     return math.hypot(b.cx() - CENTER_X, b.cy() - CENTER_Y)
 def pack_int16(v):
     v = int(v)
+    if v < 0:
+        v += 65536
     return (v & 0xFF, (v >> 8) & 0xFF)
 
 while not app.need_exit():
@@ -115,22 +117,22 @@ while not app.need_exit():
     # 推算藍門位置：因為球門對稱，藍門應在黃門對稱點
     # 將黃門向量反轉即可得到虛擬藍門
         x_y,y_y = pos_y
-        x_b_virt = -x_y
+        x_b_virt = x_y
         y_b_virt = -y_y + (2 * YG * ATTACK_Side ) 
         status = 1
 
-        robot_x = -(x_y - x_b_virt) * 0.5
-        robot_y = -(y_y - y_b_virt) * 0.5
+        robot_x = -(x_y + x_b_virt) * 0.5
+        robot_y = (y_b_virt - y_y ) * 0.5
         
         print(f"World Pos: X={robot_x:.1f}, Y={robot_y:.1f}")
     elif not pos_y and pos_b:
         # 如果只看到藍門，同理推算黃門虛擬座標
         x_b,y_b = pos_b
-        x_y_virt = -x_b
+        x_y_virt = x_b
         y_y_virt = -y_b - (2 * YG * ATTACK_Side )
         status = 1
 
-        robot_x = (x_y_virt - x_b) * 0.5
+        robot_x = -(x_y_virt + x_b) * 0.5
         robot_y = (y_y_virt - y_b) * 0.5
 
         print(f"World Pos: X={robot_x:.1f}, Y={robot_y:.1f}")
