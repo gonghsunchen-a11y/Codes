@@ -12,7 +12,7 @@ void loop(){
   ballsensor();
   Serial.print("ang = ");Serial.println(ballData.angle);
   Serial.print("dis = ");Serial.println(ballData.dist);
-  delay(100);
+  //delay(100);
   /*static uint32_t lastDisplayTime = 0;
   if(ballData.valid){   //有球
     //Serial.print("Angle: "); Serial.println(ballData.angle);
