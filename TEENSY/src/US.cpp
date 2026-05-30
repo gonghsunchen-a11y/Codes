@@ -22,7 +22,7 @@ void echoISR(){
   }
 }
 
-void trggerUS(){
+void triggerUS(){
   digitalWrite(TRIG, LOW);
   delayMicroseconds(2);
   digitalWrite(TRIG, HIGH);
@@ -63,6 +63,6 @@ void setup(){
 void loop(){
   updateUS();
 
-  Serial.pirnt("dist = ");
+  Serial.print("dist = ");
   Serial.println(us_dist_cm);
 }
