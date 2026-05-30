@@ -5,38 +5,64 @@
 #define TRIG 3
 #define ECHO 8
 
-float readRCW0001() {
+volatile uint32_t echo_start = 0;
+volatile uint32_t echo_duration = 0;
+volatile bool echo_done = false;
+
+float us_dist_cm = 999;
+uint32_t last_trigger_time = 0;
+
+void echoISR(){
+  if(digitalRead(ECHO) == HIGH){
+    echo_start = micros();
+  }
+  else{
+    echo_duration = micros() - echo_start;
+    echo_done = true;
+  }
+}
+
+void trggerUS(){
   digitalWrite(TRIG, LOW);
   delayMicroseconds(2);
-
   digitalWrite(TRIG, HIGH);
   delayMicroseconds(10);
   digitalWrite(TRIG, LOW);
-
-  unsigned long duration = pulseIn(ECHO, HIGH, 25000); // timeout 25ms
-
-  if (duration == 0) {
-    return -1; // 沒讀到
+}
+void updateUS(){
+  if(millis() - last_trigger_time >= 50){
+    last_trigger_time = millis();
+    echo_done = false;
+    triggerUS();
   }
 
-  float distance_cm = duration * 0.0343 / 2.0;
-  return distance_cm;
-}
+  if(echo_done){
+    noInterrupts();
+    uint32_t duration = echo_duration;
+    echo_done = false;
+    interrupts();
 
+    if(duration > 100 && duration < 25000){
+      us_dist_cm = duration * 0.0343f / 2.0f;
+    }
+    else{
+      us_dist_cm = 999;
+    }
+  }
+}
 
 void setup(){
+  Serial.begin(115200);
   pinMode(TRIG, OUTPUT);
   pinMode(ECHO, INPUT);
+
+   attachInterrupt(digitalPinToInterrupt(ECHO), echoISR, CHANGE);
 }
+
+
 void loop(){
-  readBNO085Yaw();
-  float d = readRCW0001();
-  if(d<0){
-    Serial.println("No echo");
-  } else {
-    Serial.print("Distance = ");
-    Serial.print(d);
-    Serial.println(" cm");
-  }
-  delay(50);
+  updateUS();
+
+  Serial.pirnt("dist = ");
+  Serial.println(us_dist_cm);
 }
