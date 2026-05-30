@@ -116,7 +116,7 @@ struct USSensor{uint16_t dist_b = 0; uint16_t dist_l = 0; uint16_t dist_r = 0;ui
 struct CamData{uint16_t ball_x = 65535;uint16_t ball_y = 65535;uint16_t ball_w = 65535;uint16_t ball_h = 65535; bool ball_valid = false;uint16_t goal_x = 65535;uint16_t goal_y = 65535;uint16_t goal_w = 65535;uint16_t goal_h = 65535; bool  goal_valid = false;} camData;
 struct RightEye{uint16_t ball_x = 65535;uint16_t ball_y = 65535;uint16_t ball_w = 65535;uint16_t ball_h = 65535; bool ball_valid = false;uint16_t goal_x = 65535;uint16_t  goal_y = 65535;uint16_t  goal_w = 65535;uint16_t  goal_h = 65535; bool goal_valid = false;} rightData;
 
-float ballDegreelist[16]={22.5,45,67.5,87.5,92.5,112.5,135,157.5,202.5,225,247.5,265,275,292.5,315,337.5};
+//float ballDegreelist[18]={0,22.5,45,67.5,87.5,92.5,112.5,135,157.5,180,202.5,225,240,267.5,272.5,300,315,337.5};
 float linesensorDegreelist[32] = {
     0.00, 11.25, 22.50, 33.75, 45.00, 56.25, 67.50, 78.75, 
     90.00, 101.25, 112.50, 123.75, 135.00, 146.25, 157.50, 168.75, 
@@ -374,32 +374,50 @@ void RightEye() {
     }
   }
 }
-/*
+
 void ballsensor(){
   // 發送請求封包，通知感測器回傳資料
-  uint8_t b[4];
+  uint8_t b[5];
   ballData.valid = false;
 
-  Serial6.write(0xBB);
-  while(!Serial6.available());
-  Serial6.readBytes(b,4);
-  if(b[1]==0xFF){
+  Serial6.write(0xDD);
+
+  uint32_t start = millis();
+  while(Serial6.available() < 5){
+    if(millis() - start > 5){
       ballData.valid = false;
       ballData.angle = 255;
       ballData.dist = 255;
+      return;
+    }
   }
-  else if(b[0]==0xAA){
-    uint8_t temp =b[1];
-    ballData.valid = true;
-    ballData.angle = (temp & 0x0F);
-    ballData.dist = (temp & 0xF0)>>4;
-    ballData.possession = (uint8_t)((1-alpha) * b[2] + ballData.possession * alpha);
+
+  Serial6.readBytes(b,5);
+
+  if(b[0] != 0xAA || b[4] != 0xEE){
+    ballData.angle = 255;
+    ballData.dist = 255;
+    return;
   }
-  else{
+  if (b[1] == 0xFF && b[2] == 0xFF && b[3] == 0xFF) {
+    ballData.angle = 255;
+    ballData.dist = 255;
+    return;
+  }
+  uint16_t angle = (uint16_t)b[2] | ((uint16_t)b[3] << 8);
+  if (angle >= 360) {
     ballData.valid = false;
+    ballData.angle = 255;
+    ballData.dist = 255;
+    return;
   }
+
+  ballData.valid = true;
+  ballData.dist = b[1];       // 1~18
+  ballData.angle = angle;
 }
-*/
+
+/*
 void readBallCam(){
     
     static uint16_t buffer[6] = {0};
@@ -426,7 +444,7 @@ void readBallCam(){
             idx = 0;  // reset buffer
         }  
     }
-}
+}*/
 /*
 void linesensor(){
   uint8_t buffer[7];

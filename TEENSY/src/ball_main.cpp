@@ -9,13 +9,15 @@ void setup(){
 
 void loop(){
   readBNO085Yaw();
-  readBallCam();
-  readussensor();
-  static uint32_t lastDisplayTime = 0;
+  ballsensor();
+  Serial.print("ang = ");Serial.println(ballData.angle);
+  Serial.print("dis = ");Serial.println(ballData.dist);
+  delay(100);
+  /*static uint32_t lastDisplayTime = 0;
   if(ballData.valid){   //有球
     //Serial.print("Angle: "); Serial.println(ballData.angle);
     //Serial.print("Dist: "); Serial.println(ballData.dist);
-    /*if (millis() - lastDisplayTime > 100) { // 每 0.1 秒更新一次螢幕
+    if (millis() - lastDisplayTime > 100) { // 每 0.1 秒更新一次螢幕
       display.clearDisplay();
       display.setTextSize(1);
       display.setTextColor(SSD1306_WHITE);
@@ -28,7 +30,7 @@ void loop(){
       display.printf("dist: %d\n",ballData.dist);
       display.display();
       lastDisplayTime = millis();
-    }*/
+    }
     //轉成弧度
     float moving_degree = ballData.angle;
     float offset = 0;
@@ -163,5 +165,5 @@ void loop(){
     uint8_t packet[8] = {0xAA,0xAA,0,0,0,0,0,0xEE};
     Serial8.write(packet, 8);
     Serial.println("0 ");
-  }
+  }*/
 }

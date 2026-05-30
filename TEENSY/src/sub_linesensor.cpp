@@ -100,7 +100,7 @@ void linesensor_update(){
     }
   }
 
-  /*for (int i = LS_count - 1; i >= 0; i--) {
+  for (int i = LS_count - 1; i >= 0; i--) {
     uint8_t bit = (lineData.state >> i) & 1;
     Serial.print(bit);
 
@@ -109,7 +109,7 @@ void linesensor_update(){
     }
   }
   Serial.println(" ");
-  delay(50);*/
+  delay(50);
 
 }
 void moveBackInBounds(){
@@ -144,8 +144,8 @@ void moveBackInBounds(){
       first_detect = true;
       speed_timer = millis();
       
-      Serial.println("LINE DETECTED !!!");
-      Serial.print("initlineDegree =");Serial.println(init_lineDegree);
+      //Serial.println("LINE DETECTED !!!");
+      //Serial.print("initlineDegree =");Serial.println(init_lineDegree);
     }
 
     diff = fabs(lineDegree - init_lineDegree);
@@ -164,7 +164,7 @@ void moveBackInBounds(){
       overhalf = false;
       finalDegree = fmod(lineDegree + 180.0f, 360.0f);
     }
-    Serial.print("finalDegree =");Serial.println(finalDegree);
+    //Serial.print("finalDegree =");Serial.println(finalDegree);
         
     lineVx = 40.0f *cos(finalDegree * DtoR_const);
     lineVy = 40.0f *sin(finalDegree * DtoR_const);   
@@ -175,8 +175,8 @@ void moveBackInBounds(){
     lineVy = 0;
   }
 
-  Serial.print("lineVx =");Serial.println(lineVx);
-  Serial.print("lineVy =");Serial.println(lineVy);
+  //Serial.print("lineVx =");Serial.println(lineVx);
+  //Serial.print("lineVy =");Serial.println(lineVy);
   
 
 }

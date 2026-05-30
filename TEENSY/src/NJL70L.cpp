@@ -27,7 +27,7 @@ void setup() {
 }
 
 void loop() {
-  Serial.print("0= ");Serial.println(readMux(0, 1));  // ch=0, M1
+  //Serial.print("0= ");Serial.println(readMux(0, 1));  // ch=0, M1
   Serial.print("8= ");Serial.println(readMux(8, 1));
     // ch=8, M1
 }
