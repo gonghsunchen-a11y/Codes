@@ -67,7 +67,7 @@ void loop(){
   if (fabs(gyroData.pitch) > 15) {
     finalVx= 0;finalVy = 0;
     control.robot_heading = 90; 
-    Vector_Motion(0, 0); 
+    Vector_Motion(0, 0,0,1,0); 
     Serial.println("ROBOT PICKED UP - ALL STATES RESET");
     return; 
   }
@@ -82,9 +82,9 @@ void loop(){
   }*/
   finalVx = vx;
   finalVy = vy;
-  Vector_Motion(finalVx,finalVy);
+  Vector_Motion(finalVx,finalVy,0,1,0);
   
-  //Serial.print("vx= ");Serial.println(finalVx);
-  //Serial.print("vy= ");Serial.println(finalVy);
+  Serial.print("vx= ");Serial.println(finalVx);
+  Serial.print("vy= ");Serial.println(finalVy);
   
 }

@@ -7,6 +7,7 @@
 #define s2 A4
 #define s3 A5
 
+
 int readMux(int ch, int sigPin) {
     digitalWrite(s0, (ch >> 0) & 1);
     digitalWrite(s1, (ch >> 1) & 1);
@@ -27,7 +28,11 @@ void setup() {
 }
 
 void loop() {
-  //Serial.print("0= ");Serial.println(readMux(0, 1));  // ch=0, M1
-  Serial.print("8= ");Serial.println(readMux(8, 1));
+  Serial.print("3= ");Serial.print(readMux(1, 3));Serial.print(" "); 
+  Serial.print("5= ");Serial.print(readMux(1, 5));Serial.print(" ");  // ch=0, M1
+  Serial.print("6= ");Serial.print(readMux(1, 6));Serial.println(" ");  // ch=0, M1
+  Serial.print("7= ");Serial.print(readMux(1, 7));Serial.println(" ");
+  Serial.print("22= ");Serial.print(readMux(2, 7));Serial.println(" ");
+  //Serial.print("8= ");Serial.println(readMux(8, 1));
     // ch=8, M1
 }

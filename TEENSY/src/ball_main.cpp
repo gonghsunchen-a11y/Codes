@@ -6,40 +6,98 @@
 void setup(){
   Robot_Init();
 }
+void showBallDirection() {
+  display.clearDisplay();
+
+  int cx = 64;
+  int cy = 32;
+  int r = 24;
+
+  display.drawCircle(cx, cy, r, SSD1306_WHITE);
+
+  if (ballData.valid) {
+    float rad = (ballData.angle+180) * DtoR_const;
+
+    int x = cx + cos(rad) * r;
+    int y = cy - sin(rad) * r;
+
+    display.drawLine(cx, cy, x, y, SSD1306_WHITE);
+    display.fillCircle(x, y, 2, SSD1306_WHITE);
+
+    display.setTextSize(1);
+    display.setCursor(0, 0);
+    display.print("A:");
+    display.print(ballData.angle);
+
+    display.setCursor(0, 10);
+    display.print("D:");
+    display.print(ballData.dist);
+  } else {
+    display.setTextSize(1);
+    display.setCursor(0, 0);
+    display.print("NO BALL");
+  }
+
+  display.display();
+}
 
 void loop(){
   readBNO085Yaw();
   ballsensor();
-  Serial.print("ang = ");Serial.println(ballData.angle);
+  showBallDirection();
+  
+  
+  if(ballData.valid){
+    float moving_degree = ballData.angle;
+    if(ballData.angle>80&& ballData.angle<100){
+      moving_degree = 90;
+    }
+  ballData.Vx = (int)round(50 * cos(moving_degree * DtoR_const));
+  ballData.Vy = (int)round(50 * sin(moving_degree * DtoR_const));
+  Serial.print("ang = ");Serial.print(ballData.angle);
   Serial.print("dis = ");Serial.println(ballData.dist);
+  Serial.print("vx = ");Serial.print(ballData.Vx);
+  Serial.print("vy = ");Serial.println(ballData.Vy);
+  uint8_t packet[8];
+    int16_t vx_i = (int16_t)(ballData.Vx);
+    int16_t vy_i = (int16_t)(ballData.Vy);
+    // Header
+    packet[0] = 0xAA;
+    packet[1] = 0xAA;
+    // vx
+    packet[2] = vx_i & 0xFF;
+    packet[3] = (vx_i >> 8) & 0xFF;
+    // vy
+    packet[4] = vy_i & 0xFF;
+    packet[5] = (vy_i >> 8) & 0xFF;
+    // checksum
+    uint8_t sum = 0;
+    for(int i = 2; i <= 5; i++){
+      sum += packet[i];
+    }
+    packet[6] = sum;
+    // end
+    packet[7] = 0xEE;
+
+    Serial8.write(packet, 8);
+  }
+  else { //無球
+    //drawMessage("NO BALL");
+    uint8_t packet[8] = {0xAA,0xAA,0,0,0,0,0,0xEE};
+    Serial8.write(packet, 8);
+    Serial.println("0 ");
+  }
   //delay(100);
   /*static uint32_t lastDisplayTime = 0;
-  if(ballData.valid){   //有球
-    //Serial.print("Angle: "); Serial.println(ballData.angle);
-    //Serial.print("Dist: "); Serial.println(ballData.dist);
-    if (millis() - lastDisplayTime > 100) { // 每 0.1 秒更新一次螢幕
-      display.clearDisplay();
-      display.setTextSize(1);
-      display.setTextColor(SSD1306_WHITE);
-      
-      // 顯示指南針 (Heading) 輔助確認感測器是否正常
-      display.setCursor(0, 20);
-      //display.printf("pitch: %.1f", gyroData.pitch);
-      display.printf("angle: %d\n", ballData.angle);
-
-      display.printf("dist: %d\n",ballData.dist);
-      display.display();
-      lastDisplayTime = millis();
-    }
     //轉成弧度
     float moving_degree = ballData.angle;
     float offset = 0;
 
   
-    float ballspeed = constrain(map(ballData.dist, 25, 55, 40, 70),40, 70);
+    float ballspeed = constrain(map(ballData.dist, 25, 55, 15, 18),15, 18);
    
     
-    if(ballData.dist >= 65){
+    if(ballData.dist >= 17){
       moving_degree = ballData.angle;
       offset = 0;
     }
@@ -50,7 +108,7 @@ void loop(){
       ballspeed = ballspeed * (0.6 + 0.4 * angleFactor);
       float side;
 
-      if(ballData.angle >= 75 && ballData.angle <= 105){
+      if(ballData.angle >= 80 && ballData.angle <= 100){
         ballspeed = 50;
         side = 0;
         offset = 0;
@@ -88,48 +146,6 @@ void loop(){
       moving_degree = 90;
       offset = 0;
     }
-    //Serial.print("f= ");Serial.println(usData.dist_f);
-    //Serial.print("l= ");Serial.println(usData.dist_l);
-    //Serial.print("b= ");Serial.println(usData.dist_b);
-    //Serial.print("r= ");Serial.println(usData.dist_r);
-    
-    //右邊線
-    if(usData.dist_r <= 22 ){if(ballData.Vx > 0)ballData.Vx = 0;}
-    else if(usData.dist_r <= 25){if(ballData.Vx > 0)ballData.Vx *= 0.5; }
-    else if(usData.dist_r <= 30){if(ballData.Vx > 0)ballData.Vx *= 0.7;}
-    else{ballData.Vx = ballData.Vx;}
-    //左邊線
-    if(usData.dist_l <= 22 ){if(ballData.Vx < 0)ballData.Vx = 0;}
-    else if(usData.dist_l <= 25){if(ballData.Vx < 0){ballData.Vx *= 0.5;}}
-    else if(usData.dist_l <= 30){if(ballData.Vx < 0)ballData.Vx *= 0.7;}
-    else{ballData.Vx = ballData.Vx;}
-    //-------------------------------------------------------------------
-    
-    //前角落
-    if(usData.dist_l <= 40){
-      if(usData.dist_f <= 23){if(ballData.Vy > 0)ballData.Vy = 0;}
-      else if(usData.dist_f <= 25){if(ballData.Vy > 0)ballData.Vy *= 0.6;}
-      else if(usData.dist_f <= 27){if(ballData.Vy > 0)ballData.Vy *= 0.8;}
-    }
-    if(usData.dist_r <= 40){
-      if(usData.dist_f <= 23){if(ballData.Vy > 0)ballData.Vy = 0;}
-      else if(usData.dist_f <= 25){if(ballData.Vy > 0)ballData.Vy *= 0.6;}
-      else if(usData.dist_f <= 27){if(ballData.Vy > 0)ballData.Vy *= 0.8;}
-    }
-    //後角落
-    if(usData.dist_l <= 35){
-      if(usData.dist_b <= 23){if(ballData.Vy < 0)ballData.Vy = 0;}
-      else if(usData.dist_b <= 25){if(ballData.Vy < 0)ballData.Vy *= 0.6;}
-      else if(usData.dist_b <= 27){if(ballData.Vy < 0)ballData.Vy *= 0.8;}
-    }
-    if(usData.dist_r <= 43){
-      if(usData.dist_b<= 23){if(ballData.Vy < 0)ballData.Vy = 0;}
-      else if(usData.dist_b <= 25){if(ballData.Vy < 0)ballData.Vy *= 0.6;}
-      else if(usData.dist_b <= 27){if(ballData.Vy < 0)ballData.Vy *= 0.8;}
-    }
-    if(usData.dist_b<= 23){if(ballData.Vy < 0)ballData.Vy = 0;}
-    if(usData.dist_f<= 23){if(ballData.Vy > 0)ballData.Vy = 0;}
-    //-------------------------------------------------------------------
     
     Serial.print("angle= ");Serial.println(ballData.angle);
     Serial.print("dist= ");Serial.println(ballData.dist);

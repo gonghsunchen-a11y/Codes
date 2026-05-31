@@ -6,6 +6,8 @@
 #include <math.h>
 #include <EEPROM.h>
 
+enum SubState { SUB_IDLE, SUB_LINECAL, SUB_ATTACK };
+SubState subState = SUB_IDLE;
 #define M1 A0
 #define M2 A1
 
@@ -20,14 +22,8 @@ struct LineData{uint32_t state = 0xFFFFFFFF;} lineData;
 int readMux(int ch, int sigPin);
 void line_calibrate();
 void linesensor_update();
-void moveBackInBounds();
-
-int8_t ls_offset[LS_count] = {
-  0, 0, 0, -15, -8, -10, -18, -18,
-  -10, 0, -6, -6, 0, -6, 0, -4,
-  0, 0, 0, 0, 0, 0, -15, 0,
-  0, 0, 0, 0, 0, 0, 0, 0
-};
+bool moveBackInBounds();
+void fast_update_line_sensor();
 
 uint16_t max_ls[LS_count];
 uint16_t avg_ls[LS_count];
@@ -44,13 +40,18 @@ bool overhalf = false;
 bool first_detect = false;
 uint32_t speed_timer = 0;
 
+float vx, vy, omega;
+uint8_t goal_valid = 0x00;
+
+float finalVx,finalVy;
+
 int readMux(int ch, int sigPin) {
 
   digitalWrite(s0, (ch >> 0) & 1);
   digitalWrite(s1, (ch >> 1) & 1);
   digitalWrite(s2, (ch >> 2) & 1);
   digitalWrite(s3, (ch >> 3) & 1);
-  delayMicroseconds(20);
+  //delayMicroseconds(10);
   if(sigPin == 1)return analogRead(M1);
   if(sigPin == 2)return analogRead(M2);
 }
@@ -60,15 +61,15 @@ void line_calibrate(){
   for(int i=0; i<LS_count; i++){
     max_ls[i] = 0;
     min_ls[i] = 4095;
-    avg_ls[i] = 0;
   }
+  uint32_t calStart = millis();
   while(1){
-    for(uint8_t i = 0; i < LS_count; i++){
-            avg_ls[i] = (max_ls[i] + min_ls[i])/2;
-        }
+    if(millis() - calStart > 30000) break;  // 30s timeout 防止永久卡死
+
     if(Serial8.available()){
-      if(Serial8.read() == 'E'){
+      if(Serial8.read() == 0xEE){
         for(uint8_t i = 0; i < LS_count; i++){
+          avg_ls[i] = (max_ls[i] + min_ls[i]) / 2;
           Serial.print(" min ");Serial.print(i);Serial.print(" = ");Serial.print(min_ls[i]);
           Serial.print(" max ");Serial.print(i);Serial.print(" = ");Serial.print(max_ls[i]);
           Serial.print(" avg ");Serial.print(i);Serial.print(" = ");Serial.print(avg_ls[i]);
@@ -77,21 +78,19 @@ void line_calibrate(){
         break;
       } 
     }
-    
     for(uint8_t i = 0; i < LS_count; i++){
-    uint16_t reading = readMux(i % 16, (i < 16) ? 1 : 2);
-
-    if(reading > max_ls[i]) max_ls[i] = reading;
-    if(reading < min_ls[i]) min_ls[i] = reading;
-    } 
-  } 
+      uint16_t reading = readMux(i % 16, (i < 16) ? 1 : 2);
+      if(reading > max_ls[i]) max_ls[i] = reading;
+      if(reading < min_ls[i]) min_ls[i] = reading;
+    }
+  }  
   for(uint8_t i = 0; i < LS_count; i++){
-            avg_ls[i] = (max_ls[i] + min_ls[i])/2;
-        }
+      avg_ls[i] = (max_ls[i] + min_ls[i]) / 2;
+  }
   EEPROM.put(0, avg_ls);
-  Serial8.print('D');
+  Serial8.write(0xDD);  // 回傳確認
 }
-
+    
 //更新
 void linesensor_update(){
   lineData.state = 0xFFFFFFFF;
@@ -106,8 +105,8 @@ void linesensor_update(){
       //Serial.println();
     }
   }
-  
-  for (int i = LS_count - 1; i >= 0; i--) {
+
+  /*for (int i = LS_count - 1; i >= 0; i--) {
     uint8_t bit = (lineData.state >> i) & 1;
     Serial.print(bit);
 
@@ -116,64 +115,31 @@ void linesensor_update(){
     }
   }
   Serial.println(" ");
-  //delay(50);
-  
+  delay(50);*/
+
 }
 void fast_update_line_sensor(){
   static uint32_t prevRaw = 0xFFFFFFFF;
   uint32_t rawState       = 0xFFFFFFFF;
 
   for(uint8_t ch = 0; ch < 16; ch++){
-    // 1. 極速切換引腳
     digitalWriteFast(s0, (ch >> 0) & 1);
     digitalWriteFast(s1, (ch >> 1) & 1);
     digitalWriteFast(s2, (ch >> 2) & 1);
     digitalWriteFast(s3, (ch >> 3) & 1);
-    
-    // 💡 修正 1：給多工器硬體開關 1.5 微秒的切換與穩定時間（這不能省！）
-    
-    delayMicroseconds(50); 
+    //delayMicroseconds(10);
 
-    analogRead(M1);
-    uint16_t r1a = analogRead(M1);
-    uint16_t r1b = analogRead(M1);
-    uint16_t r1 = max(r1a, r1b);
+    uint16_t r1 = analogRead(M1);
+    uint16_t r2 = analogRead(M2);
 
-    analogRead(M2);
-    uint16_t r2a = analogRead(M2);
-    uint16_t r2b = analogRead(M2);
-    uint16_t r2 = max(r2a, r2b); // 這一次讀到的才是對的
-    // 2. 判斷邏輯
-    if(r1 < avg_ls[ch]) {
-      rawState &= ~(1UL << ch);
-
-
-    }
-
-    if(r2 < avg_ls[ch + 16]) {
-      rawState &= ~(1UL << (ch + 16));
-
-    }
-    
+    if(r1 < avg_ls[ch])    rawState &= ~(1UL << ch);
+    if(r2 < avg_ls[ch+16]) rawState &= ~(1UL << (ch + 16));
   }
 
-  // 💡 修正 3：軟體濾波（如果你發現還是有跳動雜訊，再開啟這兩行）
-  // 如果要防跳動，用「且（&）」會比「或（|）」在線條偵測上更安全
-  lineData.state = rawState; 
-  
-   for (int i = LS_count - 1; i >= 0; i--) {
-    uint8_t bit = (lineData.state >> i) & 1;
-    Serial.print(bit);
-
-    if (i % 4 == 0 && i != 0) {
-      Serial.print(" "); 
-    }
-  }
-  Serial.println(" ");
-  
-  // prevRaw        = rawState;
+  lineData.state = prevRaw | rawState;
+  prevRaw        = rawState;
 }
-void moveBackInBounds(){
+bool moveBackInBounds(){
   //-----LINE SENSOR-----
   float sumX = 0.0f, sumY = 0.0f;
   int count = 0;
@@ -194,7 +160,7 @@ void moveBackInBounds(){
 
   // B : 反彈
 
-  if(linedetected && count > 1){
+  if(linedetected && count >= 1){
     float lineDegree = atan2(sumY, sumX) * RtoD_const;
     if (lineDegree < 0){lineDegree += 360;} 
     
@@ -205,8 +171,8 @@ void moveBackInBounds(){
       first_detect = true;
       speed_timer = millis();
       
-      //Serial.println("LINE DETECTED !!!");
-      //Serial.print("initlineDegree =");Serial.println(init_lineDegree);
+      Serial.println("LINE DETECTED !!!");
+      Serial.print("initlineDegree =");Serial.println(init_lineDegree);
     }
 
     diff = fabs(lineDegree - init_lineDegree);
@@ -225,21 +191,59 @@ void moveBackInBounds(){
       overhalf = false;
       finalDegree = fmod(lineDegree + 180.0f, 360.0f);
     }
-    //Serial.print("finalDegree =");Serial.println(finalDegree);
+    Serial.print("finalDegree =");Serial.println(finalDegree);
         
-    lineVx = 50.0f *cos(finalDegree * DtoR_const);
-    lineVy = 50.0f *sin(finalDegree * DtoR_const);   
+    lineVx = 80.0f *cos(finalDegree * DtoR_const);
+    lineVy = 80.0f *sin(finalDegree * DtoR_const);   
+    return true;
   }
   else{
     first_detect = false;
     lineVx = 0;
     lineVy = 0;
+    return false;
   }
 
-  //Serial.print("lineVx =");Serial.println(lineVx);
-  //Serial.print("lineVy =");Serial.println(lineVy);
-  
 
+}
+
+void readCommand(){
+    while(Serial8.available() > 0){
+        uint8_t cmd = Serial8.read();
+        if(cmd == 0xCC && subState != SUB_ATTACK){
+          subState = SUB_LINECAL;
+          line_calibrate();
+          subState = SUB_IDLE;
+        }
+        else if(cmd == 0xAA){
+          subState = SUB_ATTACK;
+        }
+    }
+}
+
+void readMainPacket(){
+    static uint8_t buffer[11];
+    static int index = 0;
+    while(Serial8.available() > 0){
+        uint8_t b = Serial8.read();
+        if(index == 0 || index == 1){
+            if(b == 0xAA) buffer[index++] = b;
+            else index = 0;
+            continue;
+        }
+        buffer[index++] = b;
+        if(index == 11){
+            index = 0;
+            if(buffer[10] != 0xEE) continue;
+            uint8_t sum = 0;
+            for(int i = 2; i <= 8; i++) sum += buffer[i];
+            if(sum != buffer[9]) continue;
+            vx         = (int16_t)((buffer[3] << 8) | buffer[2]);
+            vy         = (int16_t)((buffer[5] << 8) | buffer[4]);
+            omega      = (int16_t)((buffer[7] << 8) | buffer[6]);
+            goal_valid =  buffer[8];
+        }
+    }
 }
 
 void setup() {
@@ -251,8 +255,8 @@ void setup() {
   pinMode(s2, OUTPUT);
   pinMode(s3, OUTPUT);
 
-  pinMode(M1, INPUT);
-  pinMode(M2, INPUT);
+  pinMode(M1, INPUT_PULLDOWN);
+  pinMode(M2, INPUT_PULLDOWN);
   
   EEPROM.begin();
   EEPROM.get(0, avg_ls);
@@ -260,17 +264,41 @@ void setup() {
   
  
 }
-
 void loop(){
-  if (Serial8.available()) {
-    char cmd = Serial8.read();
-    //Serial.print(cmd);
-    if (cmd == 'C') {
-      line_calibrate(); // 進入校準模式
+  if(subState != SUB_ATTACK){
+        readCommand();  // ✅ 只在非 ATTACK 時讀指令
+    }
+  else if(subState == SUB_ATTACK){
+    readMainPacket();   // 收 vx/vy/omega
+    fast_update_line_sensor();
+    readBNO085Yaw();
+    bool onLine = moveBackInBounds();
+    float omg = -omega/4000;
+    //if(lineData.state != 0xFFFFFFFF ){MotorStop();}
+    static bool useRamp=false;
+    if (fabs(gyroData.pitch) > 15) {
+    finalVx= 0;finalVy = 0;
+    control.robot_heading = 90; 
+    Vector_Motion(0, 0,0,1,0); 
+    Serial.println("ROBOT PICKED UP - ALL STATES RESET");
+    return; 
+  }
+    if(onLine){
+      finalVx = lineVx;
+      finalVy = lineVy;
+    }
+    else{
+      finalVx = vx;
+      finalVy = vy;
+    }     // 白線更新
+    if(goal_valid == 0x00){
+      Vector_Motion(finalVx, finalVy, 0, 1, 0);
+    }
+    else{
+      Vector_Motion(finalVx, finalVy, omg, 0, 0);
+    }
+    if(onLine){
+      Serial.println("line");
     }
   }
-  readBNO085Yaw();
-  fast_update_line_sensor();
-  moveBackInBounds();
-  Vector_Motion(lineVx,lineVy,0,1,0);
 }

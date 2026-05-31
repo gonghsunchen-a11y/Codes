@@ -4,6 +4,7 @@
 
 void setup(){
   Robot_Init();
+  Serial2.begin(115200);
 }
 void loop(){
   readBNO085Yaw();
