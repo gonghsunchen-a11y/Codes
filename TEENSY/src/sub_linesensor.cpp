@@ -19,19 +19,12 @@ struct LineData{uint32_t state = 0xFFFFFFFF;} lineData;
 
 int readMux(int ch, int sigPin);
 void line_calibrate();
-void linesensor_update();
 void moveBackInBounds();
-
-int8_t ls_offset[LS_count] = {
-  0, 0, 0, -15, -8, -10, -18, -18,
-  -10, 0, -6, -6, 0, -6, 0, -4,
-  0, 0, 0, 0, 0, 0, -15, 0,
-  0, 0, 0, 0, 0, 0, 0, 0
-};
 
 uint16_t max_ls[LS_count];
 uint16_t avg_ls[LS_count];
 uint16_t min_ls[LS_count];
+
 //SPEED
 float lineVx = 0;
 float lineVy = 0;
@@ -43,7 +36,7 @@ bool start = false;
 bool overhalf = false;
 bool first_detect = false;
 uint32_t speed_timer = 0;
-
+/*
 int readMux(int ch, int sigPin) {
 
   digitalWrite(s0, (ch >> 0) & 1);
@@ -53,7 +46,7 @@ int readMux(int ch, int sigPin) {
   delayMicroseconds(20);
   if(sigPin == 1)return analogRead(M1);
   if(sigPin == 2)return analogRead(M2);
-}
+}*/
 
 //量線
 void line_calibrate(){
@@ -91,7 +84,7 @@ void line_calibrate(){
   EEPROM.put(0, avg_ls);
   Serial8.print('D');
 }
-
+/*
 //更新
 void linesensor_update(){
   lineData.state = 0xFFFFFFFF;
@@ -118,7 +111,7 @@ void linesensor_update(){
   Serial.println(" ");
   //delay(50);
   
-}
+}*/
 void fast_update_line_sensor(){
   static uint32_t prevRaw = 0xFFFFFFFF;
   uint32_t rawState       = 0xFFFFFFFF;
@@ -132,27 +125,20 @@ void fast_update_line_sensor(){
     
     // 💡 修正 1：給多工器硬體開關 1.5 微秒的切換與穩定時間（這不能省！）
     
-    delayMicroseconds(50); 
+    //delayMicroseconds(50); 
 
     analogRead(M1);
-    uint16_t r1a = analogRead(M1);
-    uint16_t r1b = analogRead(M1);
-    uint16_t r1 = max(r1a, r1b);
+    uint16_t r1 = analogRead(M1);
 
     analogRead(M2);
-    uint16_t r2a = analogRead(M2);
-    uint16_t r2b = analogRead(M2);
-    uint16_t r2 = max(r2a, r2b); // 這一次讀到的才是對的
+    uint16_t r2 =  analogRead(M2); // 這一次讀到的才是對的
     // 2. 判斷邏輯
     if(r1 < avg_ls[ch]) {
       rawState &= ~(1UL << ch);
-
-
     }
 
     if(r2 < avg_ls[ch + 16]) {
       rawState &= ~(1UL << (ch + 16));
-
     }
     
   }
@@ -160,7 +146,7 @@ void fast_update_line_sensor(){
   // 💡 修正 3：軟體濾波（如果你發現還是有跳動雜訊，再開啟這兩行）
   // 如果要防跳動，用「且（&）」會比「或（|）」在線條偵測上更安全
   lineData.state = rawState; 
-  
+  /*
    for (int i = LS_count - 1; i >= 0; i--) {
     uint8_t bit = (lineData.state >> i) & 1;
     Serial.print(bit);
@@ -170,7 +156,7 @@ void fast_update_line_sensor(){
     }
   }
   Serial.println(" ");
-  
+  */
   // prevRaw        = rawState;
 }
 void moveBackInBounds(){
@@ -194,7 +180,7 @@ void moveBackInBounds(){
 
   // B : 反彈
 
-  if(linedetected && count > 1){
+  if(linedetected && count >= 1){
     float lineDegree = atan2(sumY, sumX) * RtoD_const;
     if (lineDegree < 0){lineDegree += 360;} 
     
