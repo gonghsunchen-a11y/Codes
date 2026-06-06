@@ -93,9 +93,7 @@ struct GyroData{float heading = 0.0; float pitch = 0.0; bool valid = false;} gyr
 //struct LineData{uint32_t state = 0x3FFFF; bool valid = false;} lineData;
 struct BallData{uint16_t dist = 255; uint16_t angle = 255; uint16_t possession = 255; bool valid = false; float Vx; float Vy;} ballData;
 struct USSensor{uint16_t dist_b = 0; uint16_t dist_l = 0; uint16_t dist_r = 0;uint16_t dist_f = 0; } usData;
-//struct CamData{uint16_t x = 65535;uint16_t y = 65535;uint16_t w = 65535;uint16_t h = 65535; bool valid = false;} targetData;
-struct CamData{uint16_t ball_x = 65535;uint16_t ball_y = 65535;uint16_t ball_w = 65535;uint16_t ball_h = 65535; bool ball_valid = false;uint16_t goal_x = 65535;uint16_t goal_y = 65535;uint16_t goal_w = 65535;uint16_t goal_h = 65535; bool  goal_valid = false;} camData;
-struct RightEye{uint16_t ball_x = 65535;uint16_t ball_y = 65535;uint16_t ball_w = 65535;uint16_t ball_h = 65535; bool ball_valid = false;uint16_t goal_x = 65535;uint16_t  goal_y = 65535;uint16_t  goal_w = 65535;uint16_t  goal_h = 65535; bool goal_valid = false;} rightData;
+struct MaixPosData{int16_t x = 0; int16_t y = 0; uint8_t status = 0; bool valid = false; uint32_t last_update = 0;} maixPosData;
 
 //float ballDegreelist[18]={0,22.5,45,67.5,87.5,92.5,112.5,135,157.5,180,202.5,225,240,267.5,272.5,300,315,337.5};
 float linesensorDegreelist[32] = {
@@ -121,8 +119,7 @@ struct RobotControl{
 // Including prototypes for the new functions and existing ones
 void Robot_Init();
 void readBNO085Yaw();
-void readCamera();
-void RightEye();
+bool readMaixPosition(Stream &port = Serial3);
 void ballsensor();
 void linesensor();
 void positionEst();
@@ -259,100 +256,42 @@ void readBNO085Yaw(){
 }
 
 
-void readcamera(){
-  static uint8_t buffer[20]; // 稍微開大一點點
-  static uint8_t index = 0;
-  while (Serial5.available()){
-    uint8_t b = Serial5.read();
-    
-    if(index == 0 && b != 0xCC){
-      continue;  // 等待開頭 0xCC
-    }
-    buffer[index++] = b;
-    if (index == 18) {
-      // 3. 檢查頭尾是否正確
-      if (buffer[0] == 0xCC && buffer[17] == 0xEE) {
-        
-        // --- 解析球 (Ball) ---
-        // 把兩個 byte 拼回 16-bit 整數
-        int b_x = buffer[1] | (buffer[2] << 8);
-        int b_y = buffer[3] | (buffer[4] << 8);
-        int b_w = buffer[5] | (buffer[6] << 8);
-        int b_h = buffer[7] | (buffer[8] << 8);
-
-        // --- 解析球門 (Goal) ---
-        int g_x = buffer[9] | (buffer[10] << 8);
-        int g_y = buffer[11] | (buffer[12] << 8);
-        int g_w = buffer[13] | (buffer[14] << 8);
-        int g_h = buffer[15] | (buffer[16] << 8);
-
-        // 4. 將解析後的資料存入你的 rightData 結構
-        // 判斷是否有效：如果在 K210 端沒看到球會傳 65535 (0xFFFF)
-        camData.ball_x = b_x;
-        camData.ball_y = b_y;
-        camData.ball_w = b_w;
-        camData.ball_h = b_h;
-        camData.ball_valid = (b_x != 65535);
-
-        camData.goal_x = g_x;
-        camData.goal_y = g_y;
-        camData.goal_w = g_w;
-        camData.goal_h = g_h;
-        camData.goal_valid = (g_x != 65535);
-      }
-      index = 0;  // reset buffer
-    }
-  }
+int16_t unpackMaixInt16(uint8_t lo, uint8_t hi){
+  return (int16_t)((uint16_t)lo | ((uint16_t)hi << 8));
 }
-void RightEye() {
-  static uint8_t buffer[20]; // 稍微開大一點點
+
+bool readMaixPosition(Stream &port){
+  static uint8_t buffer[7];
   static uint8_t index = 0;
-  
-  while (Serial5.available()) {
-    uint8_t b = Serial5.read();
-    
-    // 1. 找標頭：如果 index 是 0 但收到的不是 0xCC，就跳過
-    if (index == 0 && b != 0xCC) continue;
+  bool updated = false;
+
+  while(port.available()){
+    uint8_t b = port.read();
+
+    if(index == 0 && b != 0xCC){
+      continue;
+    }
 
     buffer[index++] = b;
 
-    // 2. 收滿 18 bytes (由你的 K210 packet 長度決定)
-    if (index == 18) {
-      // 3. 檢查頭尾是否正確
-      if (buffer[0] == 0xCC && buffer[17] == 0xEE) {
-        
-        // --- 解析球 (Ball) ---
-        // 把兩個 byte 拼回 16-bit 整數
-        int b_x = buffer[1] | (buffer[2] << 8);
-        int b_y = buffer[3] | (buffer[4] << 8);
-        int b_w = buffer[5] | (buffer[6] << 8);
-        int b_h = buffer[7] | (buffer[8] << 8);
-
-        // --- 解析球門 (Goal) ---
-        int g_x = buffer[9] | (buffer[10] << 8);
-        int g_y = buffer[11] | (buffer[12] << 8);
-        int g_w = buffer[13] | (buffer[14] << 8);
-        int g_h = buffer[15] | (buffer[16] << 8);
-
-        // 4. 將解析後的資料存入你的 rightData 結構
-        // 判斷是否有效：如果在 K210 端沒看到球會傳 65535 (0xFFFF)
-        rightData.ball_x = b_x;
-        rightData.ball_y = b_y;
-        rightData.ball_w = b_w;
-        rightData.ball_h = b_h;
-        rightData.ball_valid = (b_x != 65535);
-
-        rightData.goal_x = g_x;
-        rightData.goal_y = g_y;
-        rightData.goal_w = g_w;
-        rightData.goal_h = g_h;
-        rightData.goal_valid = (g_x != 65535);
-      }
-      
-      // 無論校驗是否成功，都要重置 index 等待下一個封包
+    if(index == 7){
       index = 0;
+
+      if(buffer[0] != 0xCC || buffer[6] != 0xEE){
+        maixPosData.valid = false;
+        continue;
+      }
+
+      maixPosData.x = unpackMaixInt16(buffer[1], buffer[2]);
+      maixPosData.y = unpackMaixInt16(buffer[3], buffer[4]);
+      maixPosData.status = buffer[5];
+      maixPosData.valid = (maixPosData.status != 0);
+      maixPosData.last_update = millis();
+      updated = true;
     }
   }
+
+  return updated;
 }
 
 void ballsensor(){

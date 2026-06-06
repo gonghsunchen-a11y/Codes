@@ -53,11 +53,13 @@ void loop(){
       moving_degree = 90;
     }
   ballData.Vx = (int)round(50 * cos(moving_degree * DtoR_const));
-  ballData.Vy = (int)round(50 * sin(moving_degree * DtoR_const));
+  ballData.Vy = (int)round(50 * sin(moving_degree * DtoR_const));\
+
   Serial.print("ang = ");Serial.print(ballData.angle);
   Serial.print("dis = ");Serial.println(ballData.dist);
   Serial.print("vx = ");Serial.print(ballData.Vx);
   Serial.print("vy = ");Serial.println(ballData.Vy);
+  
   uint8_t packet[8];
     int16_t vx_i = (int16_t)(ballData.Vx);
     int16_t vy_i = (int16_t)(ballData.Vy);
