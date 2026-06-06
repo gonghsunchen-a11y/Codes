@@ -36,7 +36,7 @@ bool start = false;
 bool overhalf = false;
 bool first_detect = false;
 uint32_t speed_timer = 0;
-/*
+
 int readMux(int ch, int sigPin) {
 
   digitalWrite(s0, (ch >> 0) & 1);
@@ -46,7 +46,7 @@ int readMux(int ch, int sigPin) {
   delayMicroseconds(20);
   if(sigPin == 1)return analogRead(M1);
   if(sigPin == 2)return analogRead(M2);
-}*/
+}
 
 //量線
 void line_calibrate(){
@@ -146,7 +146,7 @@ void fast_update_line_sensor(){
   // 💡 修正 3：軟體濾波（如果你發現還是有跳動雜訊，再開啟這兩行）
   // 如果要防跳動，用「且（&）」會比「或（|）」在線條偵測上更安全
   lineData.state = rawState; 
-  /*
+  
    for (int i = LS_count - 1; i >= 0; i--) {
     uint8_t bit = (lineData.state >> i) & 1;
     Serial.print(bit);
@@ -156,7 +156,7 @@ void fast_update_line_sensor(){
     }
   }
   Serial.println(" ");
-  */
+  
   // prevRaw        = rawState;
 }
 void moveBackInBounds(){

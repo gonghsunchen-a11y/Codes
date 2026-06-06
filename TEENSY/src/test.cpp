@@ -3,6 +3,7 @@
 #include <Adafruit_SSD1306.h>
 #include <Arduino.h>
 #include <math.h>
+#include <Robot.h>
 
 //Motor1
 #define DIR_1 37   // 方向控制腳1
@@ -24,7 +25,7 @@
 #define SLP1 23    
 #define SLP2 12
 int speed = 10;
-void SetMotorSpeed(uint8_t port, int8_t speed){
+/*void SetMotorSpeed(uint8_t port, int8_t speed){
   speed = constrain(speed,-1.5 * 50, 1.5 * 50);
   int pwmVal = abs(speed) * 255 / 100;
   switch (port){
@@ -78,11 +79,11 @@ void SetMotorSpeed(uint8_t port, int8_t speed){
       }
   }
 }
-
+*/
 
 void setup(){
-    
-    pinMode(DIR_1,OUTPUT);
+    Robot_Init();
+    /*pinMode(DIR_1,OUTPUT);
     pinMode(DIR_2,OUTPUT);
     pinMode(DIR_3,OUTPUT);
     pinMode(DIR_4,OUTPUT);
@@ -95,22 +96,37 @@ void setup(){
     pinMode(SLP1, OUTPUT);
     pinMode(SLP2, OUTPUT);
     digitalWrite(SLP1, HIGH);
-    digitalWrite(SLP2, HIGH);
+    digitalWrite(SLP2, HIGH);*/
 }
-void MotorStop(){
+/*void MotorStop(){
   analogWrite(pwmPin1, 0);
   analogWrite(pwmPin2, 0);
   analogWrite(pwmPin3, 0);
   analogWrite(pwmPin4, 0);
-}
+}*/
 
 
 
 void loop(){
-  SetMotorSpeed(1, 0);
+   if(readMaixPosition()){
+    Serial.print("x = ");
+    Serial.print(maixPosData.x);
+
+    Serial.print(" y = ");
+    Serial.print(maixPosData.y);
+
+    Serial.print(" status = ");
+    Serial.print(maixPosData.status);
+
+    Serial.print(" valid = ");
+    Serial.println(maixPosData.valid);
+  }
+
+
+  /*SetMotorSpeed(1, 0);
   SetMotorSpeed(2, 20);
   SetMotorSpeed(3, 0);
-  SetMotorSpeed(4, 20);
+  SetMotorSpeed(4, 20);*/
 } 
 
 /*

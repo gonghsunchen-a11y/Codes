@@ -152,7 +152,7 @@ void Robot_Init(){
   //digitalWrite(13, HIGH);
   
   Serial.begin(115200);
-  Serial3.begin(921600);
+  Serial3.begin(115200);
   Serial4.begin(921600);
   Serial5.begin(921600);
   Serial6.begin(115200);
@@ -427,11 +427,11 @@ void SetMotorSpeed(uint8_t port, int8_t speed){
   switch (port){
     case 1:
       if(speed<0){
-        digitalWrite(DIR_1, HIGH);
+        digitalWrite(DIR_1, LOW);
         analogWrite(pwmPin1, pwmVal);
       }
       else if(speed>0){
-        digitalWrite(DIR_1, LOW);
+        digitalWrite(DIR_1, HIGH);
         analogWrite(pwmPin1, pwmVal);
       }
       else{

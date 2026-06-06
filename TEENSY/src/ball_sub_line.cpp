@@ -243,16 +243,18 @@ void loop(){
     Serial.println("ROBOT PICKED UP - ALL STATES RESET");
     return;
   }
-
+/*
   if(onLine){
     finalVx = lineVx;
     finalVy = lineVy;
+    Serial.println("line");
   }
   else{
     finalVx = vx;
     finalVy = vy;
-  }
-
+  }*/
+  finalVx = vx;
+  finalVy = vy;
   Vector_Motion(finalVx, finalVy, 0, 1, 0);
   Serial.print("vx= ");Serial.println(finalVx);
   Serial.print("vy= ");Serial.println(finalVy);
