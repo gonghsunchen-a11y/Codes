@@ -107,9 +107,19 @@ void fast_update_line_sensor(){
     if(r1 < avg_ls[ch]) rawState &= ~(1UL << ch);
     if(r2 < avg_ls[ch + 16]) rawState &= ~(1UL << (ch + 16));
   }
-
+  delay(1);
   lineData.state = rawState;
-}
+  /*for (int i = LS_count - 1; i >= 0; i--) {
+    uint8_t bit = (lineData.state >> i) & 1;
+    Serial.print(bit);
+
+    if (i % 4 == 0 && i != 0) {
+      Serial.print(" "); 
+    }
+  }
+  Serial.println(" ");
+*/
+  }
 
 bool moveBackInBounds(){
   float sumX = 0.0f;
@@ -243,7 +253,7 @@ void loop(){
     Serial.println("ROBOT PICKED UP - ALL STATES RESET");
     return;
   }
-/*
+
   if(onLine){
     finalVx = lineVx;
     finalVy = lineVy;
@@ -252,9 +262,7 @@ void loop(){
   else{
     finalVx = vx;
     finalVy = vy;
-  }*/
-  finalVx = vx;
-  finalVy = vy;
+  }
   Vector_Motion(finalVx, finalVy, 0, 1, 0);
   Serial.print("vx= ");Serial.println(finalVx);
   Serial.print("vy= ");Serial.println(finalVy);
