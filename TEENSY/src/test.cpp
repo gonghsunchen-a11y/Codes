@@ -85,9 +85,45 @@ void setup(){
   analogWrite(pwmPin4, 0);
 }*/
 
-
-
 void loop(){
+  /*
+   while (Serial6.available()) {
+    Serial6.read(); // 清掉舊資料
+  }
+
+  Serial.println("send DD");
+  Serial6.write(0xDD);
+
+  uint32_t start = millis();
+  while (millis() - start <  200) {
+    while (Serial6.available()) {
+      uint8_t b = Serial6.read();
+
+      if (b < 16) Serial.print("0");
+      Serial.print(b, HEX);
+      Serial.print(" ");
+    }
+  }
+
+  Serial.println();*/
+  //delay(50);
+  readMaix();
+  
+    Serial.print("X=");
+    Serial.print(maixPosData.x);
+    Serial.print(" Y=");
+    Serial.print(maixPosData.y);
+    Serial.print(" status=");
+    Serial.println(maixPosData.status);
+  
+
+  
+    Serial.print(" Ball angle=");
+    Serial.print(maixPosData.ball_angle);
+    Serial.print(" dist=");
+    Serial.println(maixPosData.ball_dist);
+  
+}
    /*if(readMaixPosition()){
     Serial.print("x = ");
     Serial.print(maixPosData.x);
@@ -101,21 +137,15 @@ void loop(){
     Serial.print(" valid = ");
     Serial.println(maixPosData.valid);
   }*/
-
-SetMotorSpeed(1,30);
-SetMotorSpeed(4,30);
-  delay(2000);
-
-  SetMotorSpeed(1,-30);
-  SetMotorSpeed(4,-30);
-  delay(2000);
+ 
+  //SetMotorSpeed(4,30);
+  
   //SetMotorSpeed(1, 30);
   //SetMotorSpeed(2, -30);
   //SetMotorSpeed(3, -30);
   //SetMotorSpeed(4, 30);
   
   //Vector_Motion(30,0,0,1,0);
-} 
 
 /*
 void SetMotorSpeed(uint8_t port, int8_t speed){

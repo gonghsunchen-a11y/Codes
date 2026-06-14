@@ -43,13 +43,9 @@ void showBallDirection() {
     display.fillCircle(x, y, 2, SSD1306_WHITE);
 
     display.setTextSize(1);
-    display.setCursor(0, 0);
+    display.setCursor(0, 20);
     display.print("A:");
     display.print(ballData.angle);
-
-    display.setCursor(0, 10);
-    display.print("D:");
-    display.print(ballData.dist);
   } else {
     display.setTextSize(1);
     display.setCursor(0, 0);
@@ -108,37 +104,9 @@ void loop(){
   if(ballData.valid){
   float moving_degree = ballData.angle;
   float ballspeed = 30;
-
-  if(ballData.dist > 15){
-    // 訊號弱，球遠，直接追球
-    moving_degree = ballData.angle;
-    ballspeed = 30;
-    if(ballData.angle >= 80 && ballData.angle <= 100)
-    {
-      moving_degree = 90;
-    }  
-  }
-  else{
-    // 訊號強，球近，開始繞球
-    ballspeed = 30;
-
-    if(ballData.angle >= 80 && ballData.angle <= 100){
-      moving_degree = 90;
-      ballspeed = 50;
-    }
-    else if(ballData.angle > 100 && ballData.angle < 180){
-      moving_degree = ballData.angle + 45;
-    }
-    else if(ballData.angle >= 180 && ballData.angle <= 270){
-      moving_degree = ballData.angle + 90;
-    }
-    else if(ballData.angle < 80 && ballData.angle > 0){
-      moving_degree = ballData.angle - 45;
-    }
-    else if(ballData.angle <= 360 && ballData.angle > 270){
-      moving_degree = ballData.angle - 90;
-    }
-  }
+  
+  
+  
 
   if(moving_degree < 0) moving_degree += 360;
   if(moving_degree >= 360) moving_degree -= 360;
@@ -147,7 +115,7 @@ void loop(){
   ballData.Vy = (int)round(ballspeed * sin(moving_degree * DtoR_const));
 
   Serial.print("ang = ");Serial.print(ballData.angle);
-  Serial.print("dis = ");Serial.println(ballData.dist);
+  
   Serial.print("vx = ");Serial.print(ballData.Vx);
   Serial.print("vy = ");Serial.println(ballData.Vy);
   uint8_t packet[8];

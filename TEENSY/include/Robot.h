@@ -47,12 +47,12 @@ unsigned long _lastUpdate = 0;
 #define pwmPin1 4    // PWM 控制腳
 
 //Motor2
-#define DIR_2 10    // 方向控制腳2
-#define pwmPin2 5    // PWM 控制腳
+#define DIR_2 11    // 方向控制腳2
+#define pwmPin2 6    // PWM 控制腳
 
 //Motor3
-#define DIR_3 11    // 方向控制腳3
-#define pwmPin3 6    // PWM 控制腳
+#define DIR_3 10    // 方向控制腳3
+#define pwmPin3 5    // PWM 控制腳
 
 //Motor4
 #define DIR_4 36    // 方向控制腳4
@@ -91,9 +91,11 @@ Adafruit_SSD1306 display(SCREEN_WIDTH, SCREEN_HEIGHT, &Wire, OLED_RESET);
 
 struct GyroData{float heading = 0.0; float pitch = 0.0; bool valid = false;} gyroData;
 //struct LineData{uint32_t state = 0x3FFFF; bool valid = false;} lineData;
-struct BallData{uint16_t dist = 255; uint16_t angle = 255; uint16_t possession = 255; bool valid = false; float Vx; float Vy;} ballData;
+struct BallData{uint16_t angle = 255; uint16_t possession = 255; bool valid = false; float Vx; float Vy;} ballData;
 struct USSensor{uint16_t dist_b = 0; uint16_t dist_l = 0; uint16_t dist_r = 0;uint16_t dist_f = 0; } usData;
-struct MaixPosData{int16_t x = 0; int16_t y = 0; uint8_t status = 0; bool valid = false; uint32_t last_update = 0;} maixPosData;
+struct MaixPosData {int16_t x = 0;int16_t y = 0;uint8_t status = 0;bool valid = false;bool ball_found = false;uint16_t ball_angle = 0xFFFF;uint8_t ball_dist = 0;} maixPosData;
+
+
 
 //float ballDegreelist[18]={0,22.5,45,67.5,87.5,92.5,112.5,135,157.5,180,202.5,225,240,267.5,272.5,300,315,337.5};
 float linesensorDegreelist[32] = {
@@ -119,7 +121,7 @@ struct RobotControl{
 // Including prototypes for the new functions and existing ones
 void Robot_Init();
 void readBNO085Yaw();
-bool readMaixPosition(Stream &port = Serial3);
+void readMaix();
 void ballsensor();
 void linesensor();
 void positionEst();
@@ -256,84 +258,68 @@ void readBNO085Yaw(){
 }
 
 
-int16_t unpackMaixInt16(uint8_t lo, uint8_t hi){
-  return (int16_t)((uint16_t)lo | ((uint16_t)hi << 8));
+void readMaix() {
+  uint8_t buffer[12];
+  Serial3.write(0xDD);
+  while(!Serial3.available());
+  Serial3.readBytes(buffer,12);
+  maixPosData.valid = 0;
+  if(buffer[0] != 0xCC) return;
+  if (buffer[11] != 0xEE) return;
+
+  if(buffer[0] == 0xCC && buffer[11] == 0xEE){
+    uint8_t checksum = (buffer[1] + buffer[2] + buffer[3] + buffer[4]+ buffer[5]+ buffer[6]+ buffer[7]+ buffer[8]+ buffer[9]) & 0xFF;
+    if(checksum == buffer[10]){
+      maixPosData.valid = true;
+      maixPosData.x = (int16_t)((uint16_t)buffer[1] | ((uint16_t)buffer[2] << 8));
+      maixPosData.y = (int16_t)((uint16_t)buffer[3] | ((uint16_t)buffer[4] << 8));
+      maixPosData.status = buffer[5];
+
+      maixPosData.ball_found = buffer[6];
+      maixPosData.ball_angle = (uint16_t)buffer[7] | ((uint16_t)buffer[8] << 8);
+      maixPosData.ball_dist = buffer[9];
+    }
+  }
+  else{
+    maixPosData.valid = false;  // checksum error
+  }
 }
+void ballsensor() {
+  static uint8_t b[5];
+  static uint8_t idx = 0;
 
-bool readMaixPosition(Stream &port){
-  static uint8_t buffer[7];
-  static uint8_t index = 0;
-  bool updated = false;
+  while (Serial6.available()) {
+    uint8_t v = Serial6.read();
 
-  while(port.available()){
-    uint8_t b = port.read();
-
-    if(index == 0 && b != 0xCC){
+    if (idx == 0 && v != 0xCC) {
       continue;
     }
 
-    buffer[index++] = b;
+    b[idx++] = v;
 
-    if(index == 7){
-      index = 0;
+    if (idx == 5) {
+      idx = 0;
 
-      if(buffer[0] != 0xCC || buffer[6] != 0xEE){
-        maixPosData.valid = false;
-        continue;
-      }
-
-      maixPosData.x = unpackMaixInt16(buffer[1], buffer[2]);
-      maixPosData.y = unpackMaixInt16(buffer[3], buffer[4]);
-      maixPosData.status = buffer[5];
-      maixPosData.valid = (maixPosData.status != 0);
-      maixPosData.last_update = millis();
-      updated = true;
-    }
-  }
-
-  return updated;
-}
-
-void ballsensor(){
-  // 發送請求封包，通知感測器回傳資料
-  uint8_t b[5];
-  ballData.valid = false;
-
-  Serial6.write(0xDD);
-
-  uint32_t start = millis();
-  while(Serial6.available() < 5){
-    if(millis() - start > 5){
       ballData.valid = false;
       ballData.angle = 255;
-      ballData.dist = 255;
-      return;
+
+      if (b[0] != 0xCC || b[4] != 0xEE) {
+        return;
+      }
+
+      uint8_t found = b[1];
+      uint16_t angle = (uint16_t)b[2] | ((uint16_t)b[3] << 8);
+
+      if (!found || angle == 0xFFFF || angle >= 360) {
+        ballData.valid = false;
+        ballData.angle = 255;
+        return;
+      }
+
+      ballData.valid = true;
+      ballData.angle = angle;
     }
   }
-
-  Serial6.readBytes(b,5);
-
-  if(b[0] != 0xAA || b[4] != 0xEE){
-    ballData.angle = 255;
-    ballData.dist = 255;
-    return;
-  }
-  if (b[1] == 0xFF && b[2] == 0xFF && b[3] == 0xFF) {
-    ballData.angle = 255;
-    ballData.dist = 255;
-    return;
-  }
-  uint16_t angle = (uint16_t)b[2] | ((uint16_t)b[3] << 8);
-  if (angle >= 360) {
-    ballData.valid = false;
-    ballData.angle = 255;
-    ballData.dist = 255;
-    return;
-  }
-
-  ballData.valid = true;
-  ballData.dist = b[1];       // 1~18
-  ballData.angle = angle;
 }
 
 /*
@@ -441,11 +427,11 @@ void SetMotorSpeed(uint8_t port, int8_t speed){
       Serial.print("1 ");Serial.println(digitalRead(DIR_1));
     break;
     case 2:
-      if(speed>0){
+      if(speed<0){
         digitalWrite(DIR_2, LOW);
         analogWrite(pwmPin2, pwmVal);
       }
-      else if(speed<0){
+      else if(speed>0){
         digitalWrite(DIR_2, HIGH);
         analogWrite(pwmPin2, pwmVal);
       }
@@ -455,11 +441,11 @@ void SetMotorSpeed(uint8_t port, int8_t speed){
       //Serial.print("2 ");Serial.println(pwmVal);
       break;
     case 3:
-      if(speed>0){
+      if(speed<0){
         digitalWrite(DIR_3, LOW);
         analogWrite(pwmPin3, pwmVal);
       }
-      else if(speed<0){
+      else if(speed>0){
         digitalWrite(DIR_3, HIGH);
         analogWrite(pwmPin3, pwmVal);
       }
@@ -469,11 +455,11 @@ void SetMotorSpeed(uint8_t port, int8_t speed){
       //Serial.print("3 ");Serial.println(pwmVal);
       break;
     case 4:
-      if(speed>0){
+      if(speed<0){
         digitalWrite(DIR_4, LOW);
         analogWrite(pwmPin4, pwmVal);
       }
-      else if(speed<0){
+      else if(speed>0){
         digitalWrite(DIR_4, HIGH);
         analogWrite(pwmPin4, pwmVal);
       }

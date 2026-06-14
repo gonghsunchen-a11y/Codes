@@ -266,7 +266,7 @@ void loop(){
   finalVx = vx;
   finalVy = vy;
   Vector_Motion(finalVx, finalVy, 0, 1, 0);
-  //Serial.print("vx= ");Serial.println(finalVx);
-  //Serial.print("vy= ");Serial.println(finalVy);
-  //Serial.println(gyroData.heading);
+  Serial.print("vx= ");Serial.println(finalVx);
+  Serial.print("vy= ");Serial.println(finalVy);
+  Serial.println(gyroData.heading);
 }
