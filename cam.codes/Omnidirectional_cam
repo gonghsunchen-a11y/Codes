@@ -5,152 +5,313 @@ cam = camera.Camera(320, 240, image.Format.FMT_RGB888)
 cam.set_awb(1)
 disp = display.Display()
 
-ser = uart.UART("/dev/ttyS0", 921600)
+ser = uart.UART("/dev/ttyS0", 115200)
 
-YELLOW_LAB = [63, 107, -33, 8, 63, 107]
-BLUE_LAB = [18, 60, -17, 26, -65, -23]
+YELLOW_LAB = [37, 79, -28, 15, 35, 82]
+BLUE_LAB = [14, 59, -5, 39, -76, -33]
+
+BALL_LAB = [19, 70, 10, 53, 18, 76]
+
+BALL_R = 85
+BALL_MIN_PIXELS = 8
 
 W, H = 320, 240
 CENTER_X, CENTER_Y = 160, 120
-R_MIN, R_MAX = 30, 120
+R_MIN, R_MAX = 45, 115
 
-# 係數
-A, B, C = 0.00113172720270608, 850.7345431, -20.336502089003
+# 距離公式參數
+A, B, C = 0.00183098896, 1800.121314,-19.93325639
 
-# 獨立平滑歷史
-hists = { "yellow": [], "blue": [] }
+hists = {
+    "yellow": [],
+    "blue": []
+}
 HIST_N = 5
 
-#半場距離
-YG = 90
-ATTACK_Side = 1 #1進攻黃門 -1藍門
+YG = 100
+ATTACK_Side = 1
 
-def blob_radius(b):
-    return math.hypot(b.cx() - CENTER_X, b.cy() - CENTER_Y)
+
 def pack_int16(v):
     v = int(v)
     if v < 0:
         v += 65536
     return (v & 0xFF, (v >> 8) & 0xFF)
 
+
+def point_radius(cx, cy):
+    return math.hypot(cx - CENTER_X, cy - CENTER_Y)
+
+
+def blob_radius(b):
+    return point_radius(b.cx(), b.cy())
+
+
+def angle_diff(a, b):
+    return abs((a - b + math.pi) % (2 * math.pi) - math.pi)
+
+
+def merge_goal_parts(blobs, color_code):
+    parts = []
+
+    for b in blobs:
+        if b.code() != color_code:
+            continue
+
+        r = blob_radius(b)
+        if not (R_MIN <= r <= R_MAX):
+            continue
+
+        if b.pixels() < 8:
+            continue
+
+        parts.append({
+            "blob": b,
+            "r": r,
+            "ang": math.atan2(b.cy() - CENTER_Y, b.cx() - CENTER_X),
+        })
+
+    if not parts:
+        return None
+
+    main = max(parts, key=lambda p: p["blob"].pixels())
+    main_r = main["r"]
+    main_ang = main["ang"]
+
+    group = []
+    for p in parts:
+        r_diff = abs(p["r"] - main_r)
+        a_diff = angle_diff(p["ang"], main_ang)
+
+        # 同一個球門：半徑要接近，角度允許被柱子切開一段
+        if r_diff < 18 and a_diff < math.radians(45):
+            group.append(p["blob"])
+
+    if not group:
+        group = [main["blob"]]
+
+    x1 = min(b.x() for b in group)
+    y1 = min(b.y() for b in group)
+    x2 = max(b.x() + b.w() for b in group)
+    y2 = max(b.y() + b.h() for b in group)
+
+    # 用加權平均，比單純外框中心穩
+    total_pixels = sum(b.pixels() for b in group)
+    cx = sum(b.cx() * b.pixels() for b in group) // total_pixels
+    cy = sum(b.cy() * b.pixels() for b in group) // total_pixels
+
+    return {
+        "x": x1,
+        "y": y1,
+        "w": x2 - x1,
+        "h": y2 - y1,
+        "cx": int(cx),
+        "cy": int(cy),
+        "pixels": total_pixels,
+        "count": len(group)
+    }
+def calc_goal_position(goal, color_name):
+    r = point_radius(goal["cx"], goal["cy"])
+
+    hists[color_name].append(r)
+    if len(hists[color_name]) > HIST_N:
+        hists[color_name].pop(0)
+
+    r_avg = sum(hists[color_name]) / len(hists[color_name])
+
+    dist = max((A * (r_avg ** 2)) + (B / math.sqrt(goal["pixels"])) + C, 10.0)
+
+    ang_rad = math.atan2(goal["cy"] - CENTER_Y, goal["cx"] - CENTER_X)
+    ang_deg = math.degrees(ang_rad) % 360
+
+    x_rel = dist * math.cos(ang_rad)
+    y_rel = dist * math.sin(ang_rad)
+
+    return x_rel, y_rel, dist, ang_deg
+def find_ball_in_circle(img):
+    ball_blobs = img.find_blobs(
+        [BALL_LAB],
+        roi=(CENTER_X - BALL_R, CENTER_Y - BALL_R, BALL_R * 2, BALL_R * 2),
+        merge=True,
+        area_threshold=BALL_MIN_PIXELS,
+        pixels_threshold=BALL_MIN_PIXELS
+    )
+
+    best_ball = None
+
+    if ball_blobs:
+        for b in ball_blobs:
+            r = point_radius(b.cx(), b.cy())
+
+            if  r < R_MIN or r > BALL_R:
+                continue
+
+            if best_ball is None or b.pixels() > best_ball.pixels():
+                best_ball = b
+
+    if not best_ball:
+        return None
+
+    dx = best_ball.cx() - CENTER_X
+    dy = best_ball.cy() - CENTER_Y
+
+    ang_rad = math.atan2(dy, dx)
+    ang_deg = int(math.degrees(ang_rad) % 360)
+    dist = int(min(point_radius(best_ball.cx(), best_ball.cy()), 255))
+
+    return {
+        "blob": best_ball,
+        "angle": ang_deg,
+        "dist": dist
+    }
+
 while not app.need_exit():
     img = cam.read()
-    if img is None: continue
+    if img is None:
+        continue
+
     img = img.flip(image.FlipDir.X)
     img = img.flip(image.FlipDir.Y)
 
-    blobs = img.find_blobs([YELLOW_LAB, BLUE_LAB], merge=True)
-   
-    best_y = max([b for b in blobs if b.code() == 1 and R_MIN <= blob_radius(b) <= R_MAX], key=lambda b: b.pixels(), default=None)
-    best_b = max([b for b in blobs if b.code() == 2 and R_MIN <= blob_radius(b) <= R_MAX], key=lambda b: b.pixels(), default=None)
+    blobs = img.find_blobs(
+        [YELLOW_LAB, BLUE_LAB],
+        merge=False,
+        area_threshold=8,
+        pixels_threshold=8
+    )
 
-    # 繪製參考圈
+    best_y = merge_goal_parts(blobs, 1)
+    best_b = merge_goal_parts(blobs, 2)
+
+    ball = find_ball_in_circle(img)
+    ball_found = 0
+    ball_angle = 0xFFFF
+    ball_dist = 0
+
     img.draw_circle(CENTER_X, CENTER_Y, R_MIN, image.Color.from_rgb(0, 255, 0), 1)
     img.draw_circle(CENTER_X, CENTER_Y, R_MAX, image.Color.from_rgb(255, 0, 0), 1)
     img.draw_cross(CENTER_X, CENTER_Y, image.Color.from_rgb(255, 255, 255), 8, 1)
+    img.draw_circle(CENTER_X, CENTER_Y, BALL_R, image.Color.from_rgb(255, 128, 0), 1)
 
-    pos_y = None # 格式: (x_rel, y_rel)
+
+   
+
+    if ball:
+        ball_found = 1
+        ball_angle = ball["angle"]
+        ball_dist = ball["dist"]
+
+        b = ball["blob"]
+        #img.draw_rect(b.x(), b.y(), b.w(), b.h(),
+               #     image.Color.from_rgb(255, 128, 0), 2)
+        #img.draw_cross(b.cx(), b.cy(),
+             #       image.Color.from_rgb(255, 255, 255), 2)
+
+        print(f"[BALL] angle={ball_angle} dist={ball_dist} pixels={b.pixels()}")
+      
+    pos_y = None
     pos_b = None
-    
-    # 處理黃球門
+
     if best_y:
-        r_y = blob_radius(best_y)
-        hists["yellow"].append(r_y)
-        if len(hists["yellow"]) > HIST_N: hists["yellow"].pop(0)
-        
-        r_avg_y = sum(hists["yellow"]) / len(hists["yellow"])
-        dist_y = max((A * (r_avg_y ** 2)) + (B / math.sqrt(best_y.pixels())) + C, 10.0)
-        
-        ang_rad_y = math.atan2(best_y.cy() - CENTER_Y, best_y.cx() - CENTER_X)
-        ang_deg_y = (math.degrees(ang_rad_y)) % 360
+        x_rel, y_rel, dist_y, ang_deg_y = calc_goal_position(best_y, "yellow")
+        pos_y = (x_rel, y_rel)
 
-        x_rel = dist_y * math.cos(ang_rad_y)  # 右為正
-        y_rel = dist_y * math.sin(ang_rad_y)  # 前為正
-        pos_y = (x_rel,y_rel)
+        #img.draw_rect(best_y["x"], best_y["y"], best_y["w"], best_y["h"],
+         #             image.Color.from_rgb(0, 0, 0), 4)
+        #img.draw_rect(best_y["x"], best_y["y"], best_y["w"], best_y["h"],
+        #              image.Color.from_rgb(255, 255, 0), 2)
+        #img.draw_line(CENTER_X, CENTER_Y, best_y["cx"], best_y["cy"],
+                   #   image.Color.from_rgb(255, 255, 255), 1)
 
+        #print(f"[YELLOW] Dist: {dist_y:.1f} cm, Ang: {ang_deg_y:.1f} deg, parts: {best_y['count']}")
+    else:
+        hists["yellow"].clear()
 
-        img.draw_rect(best_y.x(), best_y.y(), best_y.w(), best_y.h(), image.Color.from_rgb(0, 0, 0), 4)
-        img.draw_rect(best_y.x(), best_y.y(), best_y.w(), best_y.h(), image.Color.from_rgb(255, 255, 0), 2)
-        # 繪製連線 (從中心到球門中心)
-        img.draw_line(CENTER_X, CENTER_Y, best_y.cx(), best_y.cy(), image.Color.from_rgb(255, 255, 255), 1)
-        print(f"[YELLOW] Dist: {dist_y:.1f} cm, Ang: {ang_deg_y:.1f} deg")
-    else: hists["yellow"].clear()
-
-    # 處理藍球門
     if best_b:
-        r_b = blob_radius(best_b)
-        hists["blue"].append(r_b)
-        if len(hists["blue"]) > HIST_N: hists["blue"].pop(0)
-        
-        r_avg_b = sum(hists["blue"]) / len(hists["blue"])
-        dist_b = max((A * (r_avg_b ** 2)) + (B / math.sqrt(best_b.pixels())) + C, 10.0)
-        
-        ang_rad_b = math.atan2(best_b.cy() - CENTER_Y, best_b.cx() - CENTER_X)
-        ang_deg_b = (math.degrees(ang_rad_b)) % 360
-        
-        x_rel = dist_b * math.cos(ang_rad_b)  # 右為正
-        y_rel = dist_b * math.sin(ang_rad_b)  # 前為正
+        x_rel, y_rel, dist_b, ang_deg_b = calc_goal_position(best_b, "blue")
         pos_b = (x_rel, y_rel)
-        
-        img.draw_rect(best_b.x(), best_b.y(), best_b.w(), best_b.h(), image.Color.from_rgb(0, 0, 0), 4)
-        img.draw_rect(best_b.x(), best_b.y(), best_b.w(), best_b.h(), image.Color.from_rgb(0, 165, 255), 2)
-        
-        # 繪製連線
-        img.draw_line(CENTER_X, CENTER_Y, best_b.cx(), best_b.cy(), image.Color.from_rgb(255, 255, 255), 1)
-        #print(f"[BLUE]   Dist: {dist_b:.1f} cm, Ang: {ang_deg_b:.1f} deg")
-    else: hists["blue"].clear()
 
+       # img.draw_rect(best_b["x"], best_b["y"], best_b["w"], best_b["h"],
+                    #  image.Color.from_rgb(0, 0, 0), 4)
+        #img.draw_rect(best_b["x"], best_b["y"], best_b["w"], best_b["h"],
+                   #   image.Color.from_rgb(0, 165, 255), 2)
+        #img.draw_line(CENTER_X, CENTER_Y, best_b["cx"], best_b["cy"],
+                 #     image.Color.from_rgb(255, 255, 255), 1)
+
+        #print(f"[BLUE] Dist: {dist_b:.1f} cm, Ang: {ang_deg_b:.1f} deg, parts: {best_b['count']}")
+    else:
+        hists["blue"].clear()
     
-
     robot_x, robot_y = 0.0, 0.0
     status = 0
 
     if pos_y and pos_b:
         x_y, y_y = pos_y
         x_b, y_b = pos_b
-        robot_x = -(x_y + x_b) * 0.5 
-        robot_y = -(y_y + y_b) * 0.5 
+
+        robot_x = -(x_y + x_b) * 0.5
+        robot_y = -(y_y + y_b) * 0.5
         status = 2
-        print(f"World Pos: X={robot_x:.1f}, Y={robot_y:.1f}")
+
+        #print(f"World Pos: X={robot_x:.1f}, Y={robot_y:.1f}")
+
     elif pos_y and not pos_b:
-    # 已知黃門位置 (x_y, y_y)
-    # 推算藍門位置：因為球門對稱，藍門應在黃門對稱點
-    # 將黃門向量反轉即可得到虛擬藍門
-        x_y,y_y = pos_y
+        x_y, y_y = pos_y
+
         x_b_virt = x_y
-        y_b_virt = -y_y + (2 * YG * ATTACK_Side ) 
-        status = 1
+        y_b_virt = -y_y + (2 * YG * ATTACK_Side)
 
         robot_x = -(x_y + x_b_virt) * 0.5
-        robot_y = (y_b_virt - y_y ) * 0.5
-        
-        print(f"World Pos: X={robot_x:.1f}, Y={robot_y:.1f}")
-    elif not pos_y and pos_b:
-        # 如果只看到藍門，同理推算黃門虛擬座標
-        x_b,y_b = pos_b
-        x_y_virt = x_b
-        y_y_virt = -y_b - (2 * YG * ATTACK_Side )
+        robot_y = (y_b_virt - y_y) * 0.5
         status = 1
+
+        #print(f"World Pos: X={robot_x:.1f}, Y={robot_y:.1f}")
+
+    elif not pos_y and pos_b:
+        x_b, y_b = pos_b
+
+        x_y_virt = x_b
+        y_y_virt = -y_b - (2 * YG * ATTACK_Side)
 
         robot_x = -(x_y_virt + x_b) * 0.5
         robot_y = (y_y_virt - y_b) * 0.5
+        status = 1
 
-        print(f"World Pos: X={robot_x:.1f}, Y={robot_y:.1f}")
-    #img = cam.read()            # Get one frame from camera, img is maix.image.Image type object                               # | 从摄像头获取一帧图像，img 是 maix.image.Image 类型的对象
-    #disp.show(img)              # Show image to screen                               # | 将图像显示到屏幕
-    #fps = time.fps()            # Calculate FPS between last time fps() call and this time call.                             # | 计算两次 fps 函数调用之间的帧率
-    #print(f"time: {1000/fps:.02f}ms, fps: {fps:.02f}")
+        #print(f"World Pos: X={robot_x:.1f}, Y={robot_y:.1f}")
 
-    #packet
     rx0, rx1 = pack_int16(robot_x)
     ry0, ry1 = pack_int16(robot_y)
+    ba0, ba1 = pack_int16(ball_angle)
+
+    checksum = (
+        rx0 + rx1 +
+        ry0 + ry1 +
+        status +
+        ball_found +
+        ba0 + ba1 +
+        ball_dist
+    ) & 0xFF
+
     packet = bytes([
         0xCC,
         rx0, rx1,
         ry0, ry1,
         status,
+        ball_found,
+        ba0, ba1,
+        ball_dist,
+        checksum,
         0xEE
     ])
-    ser.write(packet)
+
+    #print("SEND 12 BYTE PACKET", packet)
+    if ser.available():
+        data = ser.read()
+        if data:
+            for v in data:
+                if v == 0xDD:
+                    print("SEND 11 BYTE PACKET", packet)
+                    ser.write(packet)
+                    break
 
     disp.show(img)
