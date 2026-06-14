@@ -198,7 +198,7 @@ void Robot_Init(){
   //attachInterrupt(digitalPinToInterrupt(right_ls), rightlstouch, RISING);
 
   Wire.begin();
-  if(!display.begin(SSD1306_SWITCHCAPVCC, 0x3C)) while(1);
+  if(!display.begin(SSD1306_SWITCHCAPVCC, 0x3C)) while(1){if(display.begin(SSD1306_SWITCHCAPVCC, 0x3C)){break;}};
   display.clearDisplay();
   display.setTextColor(SSD1306_WHITE);
   
@@ -426,6 +426,7 @@ void SetMotorSpeed(uint8_t port, int8_t speed){
   int pwmVal = abs(speed) * 255 / 100;
   switch (port){
     case 1:
+      Serial.print("1 ");Serial.println(speed);
       if(speed<0){
         digitalWrite(DIR_1, LOW);
         analogWrite(pwmPin1, pwmVal);
@@ -437,42 +438,51 @@ void SetMotorSpeed(uint8_t port, int8_t speed){
       else{
         analogWrite(pwmPin1, 0);
       }
+      Serial.print("1 ");Serial.println(digitalRead(DIR_1));
+    break;
     case 2:
-      if(speed<0){
+      if(speed>0){
         digitalWrite(DIR_2, LOW);
         analogWrite(pwmPin2, pwmVal);
       }
-      else if(speed>0){
+      else if(speed<0){
         digitalWrite(DIR_2, HIGH);
         analogWrite(pwmPin2, pwmVal);
       }
       else{
         analogWrite(pwmPin2, 0);
       }
+      //Serial.print("2 ");Serial.println(pwmVal);
+      break;
     case 3:
-      if(speed<0){
+      if(speed>0){
         digitalWrite(DIR_3, LOW);
         analogWrite(pwmPin3, pwmVal);
       }
-      else if(speed>0){
+      else if(speed<0){
         digitalWrite(DIR_3, HIGH);
         analogWrite(pwmPin3, pwmVal);
       }
       else{
         analogWrite(pwmPin3, 0);
       }
+      //Serial.print("3 ");Serial.println(pwmVal);
+      break;
     case 4:
-      if(speed<0){
+      if(speed>0){
         digitalWrite(DIR_4, LOW);
         analogWrite(pwmPin4, pwmVal);
       }
-      else if(speed>0){
+      else if(speed<0){
         digitalWrite(DIR_4, HIGH);
         analogWrite(pwmPin4, pwmVal);
       }
       else{
         analogWrite(pwmPin4, 0);
+
       }
+      //Serial.print("4 ");Serial.println(pwmVal);
+    break;
   }
 }
 

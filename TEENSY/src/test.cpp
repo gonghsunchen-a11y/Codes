@@ -5,26 +5,6 @@
 #include <math.h>
 #include <Robot.h>
 
-//Motor1
-#define DIR_1 37   // 方向控制腳1
-#define pwmPin1 4    // PWM 控制腳
-
-//Motor2
-#define DIR_2 10    // 方向控制腳2
-#define pwmPin2 5    // PWM 控制腳
-
-//Motor3
-#define DIR_3 11    // 方向控制腳3
-#define pwmPin3 6    // PWM 控制腳
-
-//Motor4
-#define DIR_4 36    // 方向控制腳4
-#define pwmPin4 3    // PWM 控制腳
-
-
-#define SLP1 23    
-#define SLP2 12
-int speed = 10;
 /*void SetMotorSpeed(uint8_t port, int8_t speed){
   speed = constrain(speed,-1.5 * 50, 1.5 * 50);
   int pwmVal = abs(speed) * 255 / 100;
@@ -108,7 +88,7 @@ void setup(){
 
 
 void loop(){
-   if(readMaixPosition()){
+   /*if(readMaixPosition()){
     Serial.print("x = ");
     Serial.print(maixPosData.x);
 
@@ -120,13 +100,21 @@ void loop(){
 
     Serial.print(" valid = ");
     Serial.println(maixPosData.valid);
-  }
+  }*/
 
+SetMotorSpeed(1,30);
+SetMotorSpeed(4,30);
+  delay(2000);
 
-  /*SetMotorSpeed(1, 0);
-  SetMotorSpeed(2, 20);
-  SetMotorSpeed(3, 0);
-  SetMotorSpeed(4, 20);*/
+  SetMotorSpeed(1,-30);
+  SetMotorSpeed(4,-30);
+  delay(2000);
+  //SetMotorSpeed(1, 30);
+  //SetMotorSpeed(2, -30);
+  //SetMotorSpeed(3, -30);
+  //SetMotorSpeed(4, 30);
+  
+  //Vector_Motion(30,0,0,1,0);
 } 
 
 /*

@@ -124,7 +124,7 @@ void loop(){
 
     if(ballData.angle >= 80 && ballData.angle <= 100){
       moving_degree = 90;
-      ballspeed = 30;
+      ballspeed = 50;
     }
     else if(ballData.angle > 100 && ballData.angle < 180){
       moving_degree = ballData.angle + 45;

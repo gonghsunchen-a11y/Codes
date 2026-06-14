@@ -158,8 +158,8 @@ bool moveBackInBounds(){
       finalDegree = fmod(lineDegree + 180.0f, 360.0f);
     }
 
-    lineVx = 50.0f * cos(finalDegree * DtoR_const);
-    lineVy = 50.0f * sin(finalDegree * DtoR_const);
+    lineVx = 70.0f * cos(finalDegree * DtoR_const);
+    lineVy = 70.0f * sin(finalDegree * DtoR_const);
     return true;
   }
 
@@ -253,7 +253,7 @@ void loop(){
     Serial.println("ROBOT PICKED UP - ALL STATES RESET");
     return;
   }
-
+/*
   if(onLine){
     finalVx = lineVx;
     finalVy = lineVy;
@@ -262,8 +262,11 @@ void loop(){
   else{
     finalVx = vx;
     finalVy = vy;
-  }
+  }*/
+  finalVx = vx;
+  finalVy = vy;
   Vector_Motion(finalVx, finalVy, 0, 1, 0);
-  Serial.print("vx= ");Serial.println(finalVx);
-  Serial.print("vy= ");Serial.println(finalVy);
+  //Serial.print("vx= ");Serial.println(finalVx);
+  //Serial.print("vy= ");Serial.println(finalVy);
+  //Serial.println(gyroData.heading);
 }
