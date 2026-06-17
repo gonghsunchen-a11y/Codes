@@ -292,15 +292,15 @@ void ballsensor() {
   ballData.valid = 0;
   if(buffer[0] != 0xCC) return;
   if (buffer[4] != 0xEE) return;
-  if(buffer[0] == 0xCC && buffer[11] == 0xEE){
-      uint8_t found = b[1];
-      uint16_t angle = (uint16_t)b[2] | ((uint16_t)b[3] << 8);
+  if(buffer[0] == 0xCC && buffer[4] == 0xEE){
+      uint8_t found = buffer[1];
+      uint16_t angle = (uint16_t)buffer[2] | ((uint16_t)buffer[3] << 8);
 
       ballData.valid = true;
       ballData.angle = angle;
   }
   else{
-      ballData.valid = true;
+      ballData.valid = false;
   }
 }
 
