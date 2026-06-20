@@ -63,6 +63,7 @@
 
 void setup(){
     Robot_Init();
+    Serial2.begin(115200);
     /*pinMode(DIR_1,OUTPUT);
     pinMode(DIR_2,OUTPUT);
     pinMode(DIR_3,OUTPUT);
@@ -85,19 +86,25 @@ void setup(){
   analogWrite(pwmPin4, 0);
 }*/
 
-void loop(){
-  /*
-   while (Serial6.available()) {
-    Serial6.read(); // 清掉舊資料
-  }
-
-  Serial.println("send DD");
-  Serial6.write(0xDD);
+void loop() {
+    readMaix();
+  Serial.print(" x=");Serial.print(maixPosData.x);
+  Serial.print(" y=");Serial.println(maixPosData.y);
+  //readBNO085Yaw();
+  //Serial.print(gyroData.heading);
+  //ballsensor();
+  //Serial.print(" angle=");Serial.println(ballData.angle);
+  //Serial.print(" dist=");Serial.println(ballData.dist);
+}/*
+  Serial3.write(0xDD);
 
   uint32_t start = millis();
-  while (millis() - start <  200) {
-    while (Serial6.available()) {
-      uint8_t b = Serial6.read();
+  bool got = false;
+
+  while (millis() - start < 200) {
+    while (Serial3.available()) {
+      got = true;
+      uint8_t b = Serial3.read();
 
       if (b < 16) Serial.print("0");
       Serial.print(b, HEX);
@@ -105,8 +112,17 @@ void loop(){
     }
   }
 
-  Serial.println();*/
+  if (!got) {
+    Serial.print("no data");
+  }
+
+  Serial.println();
+  delay(500);
+}*/
   //delay(50);
+  //ballsensor();
+  //Serial.println(ballData.angle);
+  /*
   readMaix();
   
     Serial.print("X=");
@@ -122,8 +138,8 @@ void loop(){
     Serial.print(maixPosData.ball_angle);
     Serial.print(" dist=");
     Serial.println(maixPosData.ball_dist);
-  
-}
+    */
+//}
    /*if(readMaixPosition()){
     Serial.print("x = ");
     Serial.print(maixPosData.x);

@@ -107,7 +107,7 @@ void fast_update_line_sensor(){
     if(r1 < avg_ls[ch]) rawState &= ~(1UL << ch);
     if(r2 < avg_ls[ch + 16]) rawState &= ~(1UL << (ch + 16));
   }
-  delay(1);
+  //delay(1);
   lineData.state = rawState;
   /*for (int i = LS_count - 1; i >= 0; i--) {
     uint8_t bit = (lineData.state >> i) & 1;
@@ -220,6 +220,7 @@ void readMainCore(){
 }
 
 void setup(){
+  delay(3000);
   Robot_Init();
   Serial2.begin(115200);
 
