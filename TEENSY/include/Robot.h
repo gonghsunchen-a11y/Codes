@@ -264,7 +264,6 @@ void readMaix() {
   }
 }
 void ballsensor() {
-<<<<<<< HEAD
   uint8_t buffer[6];
   Serial6.write(0xDD);
   //while(!Serial6.available()){Serial.println("esp");};
@@ -278,24 +277,6 @@ void ballsensor() {
   uint8_t dist = buffer[4];
   if (!found || angle == 0xFFFF || angle >= 360) {
     return;
-=======
-  uint8_t buffer[5];
-  Serial6.write(0xDD);
-  while(!Serial6.available());
-  Serial6.readBytes(buffer,5);
-  ballData.valid = 0;
-  if(buffer[0] != 0xCC) return;
-  if (buffer[4] != 0xEE) return;
-  if(buffer[0] == 0xCC && buffer[4] == 0xEE){
-      uint8_t found = buffer[1];
-      uint16_t angle = (uint16_t)buffer[2] | ((uint16_t)buffer[3] << 8);
-
-      ballData.valid = true;
-      ballData.angle = angle;
-  }
-  else{
-      ballData.valid = false;
->>>>>>> dae5a2b7ae8e632834f5379614c3d45d19d4f160
   }
   ballData.valid = true;
   ballData.angle = angle;
