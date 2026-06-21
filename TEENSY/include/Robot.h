@@ -8,10 +8,6 @@
 //Line Sensor
 #define EMERGENCY_THRESHOLD 90
 
-//BALL SEARCHING THRESHOLD
-#define BALL_Threshold 5
-#define TOTAL_BALL_SENSORS 10
-
 //ROBOT MAX SPEED
 #define MAX_V 50
 
