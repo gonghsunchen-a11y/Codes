@@ -87,7 +87,22 @@ void setup(){
 }*/
 
 void loop() {
-  kicker_control(1);
+  readMaix();
+  
+    Serial.print("X=");
+    Serial.print(maixPosData.x);
+    Serial.print(" Y=");
+    Serial.print(maixPosData.y);
+    Serial.print(" status=");
+    Serial.println(maixPosData.status);
+  
+
+  
+    Serial.print(" Ball angle=");
+    Serial.print(maixPosData.ball_angle);
+    Serial.print(" dist=");
+    Serial.println(maixPosData.ball_dist);
+  //kicker_control(1);
   //Serial.print(" y=");Serial.println(maixPosData.y);
   //readBNO085Yaw();
   //Serial.print(gyroData.heading);

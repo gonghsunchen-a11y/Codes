@@ -78,8 +78,9 @@ Adafruit_SSD1306 display(SCREEN_WIDTH, SCREEN_HEIGHT, &Wire, OLED_RESET);
 
 struct GyroData{float heading = 0.0; float pitch = 0.0; bool valid = false;} gyroData;
 //struct LineData{uint32_t state = 0x3FFFF; bool valid = false;} lineData;
-struct BallData{uint16_t angle = 255; uint16_t possession = 255;uint8_t dist; bool valid = false; float Vx; float Vy;} ballData;
+struct BallData{uint16_t angle = 0xFFFF; uint16_t possession = 255;uint8_t dist; bool valid = false; float Vx; float Vy;} ballData;
 struct MaixPosData {int16_t x = 0;int16_t y = 0;uint8_t status = 0;bool valid = false;bool ball_found = false;uint16_t ball_angle = 0xFFFF;uint8_t ball_dist = 0;} maixPosData;
+struct FrontCam {int16_t x = 65535;int16_t y = 65535;int8_t h = 0;int8_t w = 0;bool valid = false;int16_t offset = 0;} frontcam;
 
 
 
@@ -259,6 +260,32 @@ void readMaix() {
     maixPosData.valid = false;  // checksum error
   }
 }
+
+void FrontCam() {
+  uint32_t start = micros();
+  uint8_t buffer[11];
+  Serial4.write(0xDD);
+  //while(!Serial3.available()){Serial.println("cam");};
+  Serial4.readBytes(buffer,11);
+  frontcam.valid = 0;
+
+  if(buffer[0] == 0xCC && buffer[10] == 0xEE){
+    uint8_t checksum = (buffer[1] + buffer[2] + buffer[3] + buffer[4]+ buffer[5]+ buffer[6]+ buffer[7]+ buffer[8]) & 0xFF;
+    if(checksum == buffer[9]){
+      //Serial.printf("duration: %ld\n", micros() - start);
+      frontcam.valid = true;
+      frontcam.x =  (uint16_t)buffer[1] | ((uint16_t)buffer[2] << 8);
+      frontcam.y =  (uint16_t)buffer[3] | ((uint16_t)buffer[4] << 8);
+      frontcam.w = buffer[5];
+      frontcam.h = buffer[6];
+      frontcam.offset = (int16_t)((uint16_t)buffer[7] | ((uint16_t)buffer[8] << 8));
+    }
+  }
+  else{
+    maixPosData.valid = false;  // checksum error
+  }
+}
+
 void ballsensor() {
   uint8_t buffer[6];
   Serial6.write(0xDD);
@@ -274,7 +301,7 @@ void ballsensor() {
   if (!found || angle == 0xFFFF || angle >= 360) {
     return;
   }
-  ballData.valid = true;
+  ballData.valid = found;
   ballData.angle = angle;
   ballData.dist = dist;
 }
