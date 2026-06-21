@@ -1,26 +1,37 @@
-from maix import camera, display, image, app, time, uart
+from maix import camera, image, app, time, uart
 import math
+
+DEBUG_VIEW = False
+GOAL_UPDATE_EVERY = 10
+
+if DEBUG_VIEW:
+    from maix import display
+    disp = display.Display()
 
 cam = camera.Camera(320, 240, image.Format.FMT_RGB888)
 cam.set_awb(1)
-disp = display.Display()
 
 ser = uart.UART("/dev/ttyS0", 115200)
 
 YELLOW_LAB = [37, 79, -28, 15, 35, 82]
 BLUE_LAB = [14, 59, -5, 39, -76, -33]
-
 BALL_LAB = [19, 70, 10, 53, 18, 76]
 
-BALL_R = 85
-BALL_MIN_PIXELS = 8
+
 
 W, H = 320, 240
-CENTER_X, CENTER_Y = 160, 120
-R_MIN, R_MAX = 45, 115
+CENTER_X, CENTER_Y = 161, 120
+R_MIN, R_MAX = 37, 115
 
-# 距離公式參數
-A, B, C = 0.00183098896, 1800.121314,-19.93325639
+BALL_R = 90
+BALL_W_MIN = 4
+BALL_W_MAX = 20
+BALL_H_MIN = 4
+BALL_H_MAX = 20
+BALL_PIXELS_MIN = 8
+BALL_PIXELS_MAX = 400
+
+A, B, C = 0.00183098896, 1800.121314, -19.93325639
 
 hists = {
     "yellow": [],
@@ -31,6 +42,22 @@ HIST_N = 5
 YG = 100
 ATTACK_Side = 1
 
+frame_count = 0
+robot_x, robot_y = 0.0, 0.0
+status = 0
+
+def pack_int8(v):
+    v = int(round(v))
+
+    if v < -128:
+        v = -128
+    if v > 127:
+        v = 127
+
+    if v < 0:
+        v += 256
+
+    return v & 0xFF
 
 def pack_int16(v):
     v = int(v)
@@ -83,7 +110,6 @@ def merge_goal_parts(blobs, color_code):
         r_diff = abs(p["r"] - main_r)
         a_diff = angle_diff(p["ang"], main_ang)
 
-        # 同一個球門：半徑要接近，角度允許被柱子切開一段
         if r_diff < 18 and a_diff < math.radians(45):
             group.append(p["blob"])
 
@@ -95,7 +121,6 @@ def merge_goal_parts(blobs, color_code):
     x2 = max(b.x() + b.w() for b in group)
     y2 = max(b.y() + b.h() for b in group)
 
-    # 用加權平均，比單純外框中心穩
     total_pixels = sum(b.pixels() for b in group)
     cx = sum(b.cx() * b.pixels() for b in group) // total_pixels
     cy = sum(b.cy() * b.pixels() for b in group) // total_pixels
@@ -110,6 +135,8 @@ def merge_goal_parts(blobs, color_code):
         "pixels": total_pixels,
         "count": len(group)
     }
+
+
 def calc_goal_position(goal, color_name):
     r = point_radius(goal["cx"], goal["cy"])
 
@@ -128,13 +155,15 @@ def calc_goal_position(goal, color_name):
     y_rel = dist * math.sin(ang_rad)
 
     return x_rel, y_rel, dist, ang_deg
+
+
 def find_ball_in_circle(img):
     ball_blobs = img.find_blobs(
         [BALL_LAB],
         roi=(CENTER_X - BALL_R, CENTER_Y - BALL_R, BALL_R * 2, BALL_R * 2),
         merge=True,
-        area_threshold=BALL_MIN_PIXELS,
-        pixels_threshold=BALL_MIN_PIXELS
+        area_threshold=BALL_PIXELS_MIN,
+        pixels_threshold=BALL_PIXELS_MIN,
     )
 
     best_ball = None
@@ -143,7 +172,16 @@ def find_ball_in_circle(img):
         for b in ball_blobs:
             r = point_radius(b.cx(), b.cy())
 
-            if  r < R_MIN or r > BALL_R:
+            if r < R_MIN or r > BALL_R:
+                continue
+
+            if b.w() < BALL_W_MIN or b.w() > BALL_W_MAX:
+                continue
+
+            if b.h() < BALL_H_MIN or b.h() > BALL_H_MAX:
+                continue
+
+            if b.pixels() < BALL_PIXELS_MIN or b.pixels() > BALL_PIXELS_MAX:
                 continue
 
             if best_ball is None or b.pixels() > best_ball.pixels():
@@ -165,6 +203,7 @@ def find_ball_in_circle(img):
         "dist": dist
     }
 
+
 while not app.need_exit():
     img = cam.read()
     if img is None:
@@ -173,119 +212,82 @@ while not app.need_exit():
     img = img.flip(image.FlipDir.X)
     img = img.flip(image.FlipDir.Y)
 
-    blobs = img.find_blobs(
-        [YELLOW_LAB, BLUE_LAB],
-        merge=False,
-        area_threshold=8,
-        pixels_threshold=8
-    )
-
-    best_y = merge_goal_parts(blobs, 1)
-    best_b = merge_goal_parts(blobs, 2)
+    frame_count += 1
 
     ball = find_ball_in_circle(img)
     ball_found = 0
     ball_angle = 0xFFFF
     ball_dist = 0
 
-    img.draw_circle(CENTER_X, CENTER_Y, R_MIN, image.Color.from_rgb(0, 255, 0), 1)
-    img.draw_circle(CENTER_X, CENTER_Y, R_MAX, image.Color.from_rgb(255, 0, 0), 1)
-    img.draw_cross(CENTER_X, CENTER_Y, image.Color.from_rgb(255, 255, 255), 8, 1)
-    img.draw_circle(CENTER_X, CENTER_Y, BALL_R, image.Color.from_rgb(255, 128, 0), 1)
-
-
-   
-
     if ball:
         ball_found = 1
         ball_angle = ball["angle"]
         ball_dist = ball["dist"]
 
-        b = ball["blob"]
-        #img.draw_rect(b.x(), b.y(), b.w(), b.h(),
-               #     image.Color.from_rgb(255, 128, 0), 2)
-        #img.draw_cross(b.cx(), b.cy(),
-             #       image.Color.from_rgb(255, 255, 255), 2)
+    if frame_count % GOAL_UPDATE_EVERY == 0:
+        blobs = img.find_blobs(
+            [YELLOW_LAB, BLUE_LAB],
+            roi=(CENTER_X - R_MAX, CENTER_Y - R_MAX, R_MAX * 2, R_MAX * 2),
+            merge=False,
+            area_threshold=8,
+            pixels_threshold=8
+        )
 
-        print(f"[BALL] angle={ball_angle} dist={ball_dist} pixels={b.pixels()}")
-      
-    pos_y = None
-    pos_b = None
+        best_y = merge_goal_parts(blobs, 1)
+        best_b = merge_goal_parts(blobs, 2)
 
-    if best_y:
-        x_rel, y_rel, dist_y, ang_deg_y = calc_goal_position(best_y, "yellow")
-        pos_y = (x_rel, y_rel)
+        pos_y = None
+        pos_b = None
 
-        #img.draw_rect(best_y["x"], best_y["y"], best_y["w"], best_y["h"],
-         #             image.Color.from_rgb(0, 0, 0), 4)
-        #img.draw_rect(best_y["x"], best_y["y"], best_y["w"], best_y["h"],
-        #              image.Color.from_rgb(255, 255, 0), 2)
-        #img.draw_line(CENTER_X, CENTER_Y, best_y["cx"], best_y["cy"],
-                   #   image.Color.from_rgb(255, 255, 255), 1)
+        if best_y:
+            x_rel, y_rel, dist_y, ang_deg_y = calc_goal_position(best_y, "yellow")
+            pos_y = (x_rel, y_rel)
+        else:
+            hists["yellow"].clear()
 
-        #print(f"[YELLOW] Dist: {dist_y:.1f} cm, Ang: {ang_deg_y:.1f} deg, parts: {best_y['count']}")
-    else:
-        hists["yellow"].clear()
+        if best_b:
+            x_rel, y_rel, dist_b, ang_deg_b = calc_goal_position(best_b, "blue")
+            pos_b = (x_rel, y_rel)
+        else:
+            hists["blue"].clear()
 
-    if best_b:
-        x_rel, y_rel, dist_b, ang_deg_b = calc_goal_position(best_b, "blue")
-        pos_b = (x_rel, y_rel)
+        robot_x, robot_y = 0.0, 0.0
+        status = 0
 
-       # img.draw_rect(best_b["x"], best_b["y"], best_b["w"], best_b["h"],
-                    #  image.Color.from_rgb(0, 0, 0), 4)
-        #img.draw_rect(best_b["x"], best_b["y"], best_b["w"], best_b["h"],
-                   #   image.Color.from_rgb(0, 165, 255), 2)
-        #img.draw_line(CENTER_X, CENTER_Y, best_b["cx"], best_b["cy"],
-                 #     image.Color.from_rgb(255, 255, 255), 1)
+        if pos_y and pos_b:
+            x_y, y_y = pos_y
+            x_b, y_b = pos_b
 
-        #print(f"[BLUE] Dist: {dist_b:.1f} cm, Ang: {ang_deg_b:.1f} deg, parts: {best_b['count']}")
-    else:
-        hists["blue"].clear()
-    
-    robot_x, robot_y = 0.0, 0.0
-    status = 0
+            robot_x = -(x_y + x_b) * 0.5
+            robot_y = -(y_y + y_b) * 0.5
+            status = 2
 
-    if pos_y and pos_b:
-        x_y, y_y = pos_y
-        x_b, y_b = pos_b
+        elif pos_y and not pos_b:
+            x_y, y_y = pos_y
 
-        robot_x = -(x_y + x_b) * 0.5
-        robot_y = -(y_y + y_b) * 0.5
-        status = 2
+            x_b_virt = x_y
+            y_b_virt = -y_y + (2 * YG * ATTACK_Side)
 
-        #print(f"World Pos: X={robot_x:.1f}, Y={robot_y:.1f}")
+            robot_x = -(x_y + x_b_virt) * 0.5
+            robot_y = (y_b_virt - y_y) * 0.5
+            status = 1
 
-    elif pos_y and not pos_b:
-        x_y, y_y = pos_y
+        elif not pos_y and pos_b:
+            x_b, y_b = pos_b
 
-        x_b_virt = x_y
-        y_b_virt = -y_y + (2 * YG * ATTACK_Side)
+            x_y_virt = x_b
+            y_y_virt = -y_b - (2 * YG * ATTACK_Side)
 
-        robot_x = -(x_y + x_b_virt) * 0.5
-        robot_y = (y_b_virt - y_y) * 0.5
-        status = 1
-
-        #print(f"World Pos: X={robot_x:.1f}, Y={robot_y:.1f}")
-
-    elif not pos_y and pos_b:
-        x_b, y_b = pos_b
-
-        x_y_virt = x_b
-        y_y_virt = -y_b - (2 * YG * ATTACK_Side)
-
-        robot_x = -(x_y_virt + x_b) * 0.5
-        robot_y = (y_y_virt - y_b) * 0.5
-        status = 1
-
-        #print(f"World Pos: X={robot_x:.1f}, Y={robot_y:.1f}")
-
-    rx0, rx1 = pack_int16(robot_x)
-    ry0, ry1 = pack_int16(robot_y)
+            robot_x = -(x_y_virt + x_b) * 0.5
+            robot_y = (y_y_virt - y_b) * 0.5
+            status = 1
+    x8 = pack_int8(robot_x)
+    y8 = pack_int8(robot_y)
     ba0, ba1 = pack_int16(ball_angle)
 
     checksum = (
-        rx0 + rx1 +
-        ry0 + ry1 +
+        x8+
+        y8+
         status +
         ball_found +
         ba0 + ba1 +
@@ -294,8 +296,8 @@ while not app.need_exit():
 
     packet = bytes([
         0xCC,
-        rx0, rx1,
-        ry0, ry1,
+        x8,
+        y8,
         status,
         ball_found,
         ba0, ba1,
@@ -304,14 +306,29 @@ while not app.need_exit():
         0xEE
     ])
 
-    #print("SEND 12 BYTE PACKET", packet)
     if ser.available():
-        data = ser.read()
+        data = ser.read(1)
+        #print("read:")
+        #print(data)
         if data:
             for v in data:
                 if v == 0xDD:
-                    print("SEND 11 BYTE PACKET", packet)
+                    #pass
                     ser.write(packet)
                     break
 
-    disp.show(img)
+
+    if DEBUG_VIEW:
+        img.draw_circle(CENTER_X, CENTER_Y, R_MIN, image.Color.from_rgb(0, 255, 0), 1)
+        img.draw_circle(CENTER_X, CENTER_Y, R_MAX, image.Color.from_rgb(255, 0, 0), 1)
+        img.draw_cross(CENTER_X, CENTER_Y, image.Color.from_rgb(255, 255, 255), 8, 1)
+        img.draw_circle(CENTER_X, CENTER_Y, BALL_R, image.Color.from_rgb(255, 128, 0), 1)
+
+        if ball:
+            b = ball["blob"]
+            img.draw_rect(b.x(), b.y(), b.w(), b.h(), image.Color.from_rgb(255, 128, 0), 2)
+            img.draw_cross(b.cx(), b.cy(), image.Color.from_rgb(255, 255, 255), 2)
+        
+        disp.show(img)
+    fps = time.fps() 
+    #print(f"time: {1000/fps:.02f}ms, fps: {fps:.02f}") # print FPS in console
