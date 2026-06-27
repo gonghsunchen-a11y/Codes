@@ -3,6 +3,7 @@ import math
 
 DEBUG_VIEW = False
 GOAL_UPDATE_EVERY = 10
+last_pos_print = time.ticks_ms()
 
 if DEBUG_VIEW:
     from maix import display
@@ -13,15 +14,15 @@ cam.set_awb(1)
 
 ser = uart.UART("/dev/ttyS0", 115200)
 
-YELLOW_LAB = [37, 79, -28, 15, 35, 82]
-BLUE_LAB = [14, 59, -5, 39, -76, -33]
+YELLOW_LAB = [33, 79, -28, 15, 35, 82]
+BLUE_LAB = [30, 70, -25, 35, -75, -20]
 BALL_LAB = [19, 70, 10, 53, 18, 76]
 
 
 
 W, H = 320, 240
-CENTER_X, CENTER_Y = 161, 120
-R_MIN, R_MAX = 37, 115
+CENTER_X, CENTER_Y = 162, 123
+R_MIN, R_MAX = 37, 105
 
 BALL_R = 90
 BALL_W_MIN = 4
@@ -45,6 +46,11 @@ ATTACK_Side = 1
 frame_count = 0
 robot_x, robot_y = 0.0, 0.0
 status = 0
+best_y = None
+best_b = None
+
+last_ball_print = time.ticks_ms()
+last_pos_print = time.ticks_ms()
 
 def pack_int8(v):
     v = int(round(v))
@@ -122,7 +128,8 @@ def merge_goal_parts(blobs, color_code):
     y2 = max(b.y() + b.h() for b in group)
 
     total_pixels = sum(b.pixels() for b in group)
-    cx = sum(b.cx() * b.pixels() for b in group) // total_pixels
+
+    cx = (x1 + x2) // 2
     cy = sum(b.cy() * b.pixels() for b in group) // total_pixels
 
     return {
@@ -136,7 +143,47 @@ def merge_goal_parts(blobs, color_code):
         "count": len(group)
     }
 
+'''
+def merge_goal_parts(blobs, color_code):
+    group = []
 
+    for b in blobs:
+        if b.code() != color_code:
+            continue
+
+        r = blob_radius(b)
+        if not (R_MIN <= r <= R_MAX):
+            continue
+
+        if b.pixels() < 8:
+            continue
+
+        group.append(b)
+
+    if not group:
+        return None
+
+    x1 = min(b.x() for b in group)
+    y1 = min(b.y() for b in group)
+    x2 = max(b.x() + b.w() for b in group)
+    y2 = max(b.y() + b.h() for b in group)
+
+    total_pixels = sum(b.pixels() for b in group)
+
+    cx = (x1 + x2) // 2
+    cy = sum(b.cy() * b.pixels() for b in group) // total_pixels
+
+    return {
+        "x": x1,
+        "y": y1,
+        "w": x2 - x1,
+        "h": y2 - y1,
+        "cx": int(cx),
+        "cy": int(cy),
+        "pixels": total_pixels,
+        "count": len(group)
+    }
+'''
 def calc_goal_position(goal, color_name):
     r = point_radius(goal["cx"], goal["cy"])
 
@@ -308,8 +355,8 @@ while not app.need_exit():
 
     if ser.available():
         data = ser.read(1)
-        #print("read:")
-        #print(data)
+        print("read:")
+        print(data)
         if data:
             for v in data:
                 if v == 0xDD:
@@ -328,7 +375,42 @@ while not app.need_exit():
             b = ball["blob"]
             img.draw_rect(b.x(), b.y(), b.w(), b.h(), image.Color.from_rgb(255, 128, 0), 2)
             img.draw_cross(b.cx(), b.cy(), image.Color.from_rgb(255, 255, 255), 2)
-        
+
+        if best_y:
+            img.draw_rect(best_y["x"], best_y["y"], best_y["w"], best_y["h"],
+                          image.Color.from_rgb(255, 255, 0), 2)
+            img.draw_cross(best_y["cx"], best_y["cy"],
+                           image.Color.from_rgb(255, 255, 0), 8, 2)
+
+        if best_b:
+            img.draw_rect(best_b["x"], best_b["y"], best_b["w"], best_b["h"],
+                          image.Color.from_rgb(0, 128, 255), 2)
+            img.draw_cross(best_b["cx"], best_b["cy"],
+                           image.Color.from_rgb(0, 128, 255), 8, 2)
+
+        if best_y and best_b:
+            img.draw_line(best_y["cx"], best_y["cy"],
+                          best_b["cx"], best_b["cy"],
+                          image.Color.from_rgb(255, 255, 255), 2)
+
+        now = time.ticks_ms()
+        if now - last_pos_print >= 200:
+            last_pos_print = now
+
+            print(
+                "robot_x=", robot_x,
+                "robot_y=", robot_y,
+                "status=", status,
+                "ball_angle=", ball_angle,
+                "ball_dist=", ball_dist
+            )
+
+            if best_y:
+                print("yellow cx=", best_y["cx"], "cy=", best_y["cy"], "count=", best_y["count"])
+
+            if best_b:
+                print("blue cx=", best_b["cx"], "cy=", best_b["cy"], "count=", best_b["count"])
+
         disp.show(img)
-    fps = time.fps() 
+    #fps = time.fps() 
     #print(f"time: {1000/fps:.02f}ms, fps: {fps:.02f}") # print FPS in console
