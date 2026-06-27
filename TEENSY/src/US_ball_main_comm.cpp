@@ -125,7 +125,7 @@ void updateUS(){
       echo_done[i] = false;
       interrupts();
 
-      if(duration > 100 && duration < 12000){
+      if(duration > 100 && duration < 15000){
         updateFilteredUS(i, duration * 0.0343f / 2.0f);
       }
       else{
@@ -381,7 +381,7 @@ void loop(){
     }
     return;
   }
-  readMaixPosition();
+  readMaix();
   readBNO085Yaw();
   ballsensor();
 
@@ -398,6 +398,6 @@ void loop(){
   ballData.Vy = vy;
   sendMovePacket(vx, vy);
   drawRunScreen(ballData.valid ? "BALL" : "HOME", vx, vy);
-  //Serial.print("Left US: ");
-  //Serial.println(us_dist_cm[US_LEFT]);  
+  Serial.print("Left US: ");
+  Serial.println(us_dist_cm[US_BACK]);  
 }

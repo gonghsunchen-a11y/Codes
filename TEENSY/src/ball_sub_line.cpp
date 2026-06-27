@@ -38,8 +38,10 @@ uint32_t speed_timer = 0;
 
 float vx;
 float vy;
+int aim_offset;
 float finalVx;
 float finalVy;
+
 
 int readMux(int ch, int sigPin){
   digitalWrite(s0, (ch >> 0) & 1);
@@ -173,6 +175,9 @@ void readCommand(){
   while(Serial8.available() > 0){
     uint8_t cmd = Serial8.read();
 
+    Serial.print("cmd=");
+    Serial.println(cmd, HEX);
+
     if(cmd == CMD_LINECAL_START && subState == SUB_IDLE){
       subState = SUB_LINECAL;
       line_calibrate();
@@ -181,6 +186,7 @@ void readCommand(){
     }
 
     if(cmd == CMD_ATTACK && subState == SUB_IDLE){
+      Serial.println("ENTER ATTACK");
       subState = SUB_ATTACK;
       return;
     }
@@ -189,32 +195,28 @@ void readCommand(){
 
 void readMainCore(){
   while(Serial8.available()){
-    if(Serial8.available() < 8) return;
+    if(Serial8.available() < 7) return;
 
     if(Serial8.read() != 0xAA) continue;
     if(Serial8.read() != 0xAA) continue;
 
-    uint8_t buffer[8];
+    uint8_t buffer[7];
     buffer[0] = 0xAA;
     buffer[1] = 0xAA;
 
-    for(int i = 2; i < 8; i++){
+    for(int i = 2; i < 7; i++){
       buffer[i] = Serial8.read();
     }
 
-    if(buffer[7] != 0xEE) continue;
+    if(buffer[6] != 0xEE) continue;
 
-    uint8_t sum = 0;
-    for(int i = 2; i <= 5; i++){
-      sum += buffer[i];
-    }
-    if(sum != buffer[6]) continue;
+    uint8_t sum = buffer[2] + buffer[3] + buffer[4];
+    if(sum != buffer[5]) continue;
 
-    int16_t vx_i = (buffer[3] << 8) | buffer[2];
-    int16_t vy_i = (buffer[5] << 8) | buffer[4];
+    vx = (int8_t)buffer[2];
+    vy = (int8_t)buffer[3];
+    aim_offset = (int8_t)buffer[4];
 
-    vx = vx_i;
-    vy = vy_i;
     return;
   }
 }
@@ -238,11 +240,19 @@ void setup(){
 void loop(){
   if(subState != SUB_ATTACK){
     readCommand();
+    //Serial.print("Go");
     return;
   }
-
+  //Serial.println(subState);
+  //Serial.print("start");
   readBNO085Yaw();
   readMainCore();
+  /*Serial.print("vx=");
+  Serial.print(vx);
+  Serial.print(" vy=");
+  Serial.print(vy);
+  Serial.print(" aim=");
+  Serial.println(aim_offset);*/
   fast_update_line_sensor();
   bool onLine = moveBackInBounds();
 
@@ -250,23 +260,36 @@ void loop(){
     finalVx = 0;
     finalVy = 0;
     control.robot_heading = 90;
-    Vector_Motion(0, 0, 0, 1, 0);
+    MotorStop();
     Serial.println("ROBOT PICKED UP - ALL STATES RESET");
     return;
   }
 
   if(onLine){
-    finalVx = lineVx;
-    finalVy = lineVy;
-    Serial.println("line");
+    Vector_Motion(lineVx, lineVy, 0, true);
   }
   else{
-    finalVx = vx;
-    finalVy = vy;
+    bool reset_heading = (aim_offset == 0);
+    Serial.print("vx= ");Serial.print(vx);
+    Serial.print("vy= ");Serial.print(vy);
+    Serial.println(aim_offset);
+    Vector_Motion(vx,vy, -aim_offset, reset_heading);
+  }
+  /*while(Serial8.available()){
+    uint8_t b = Serial8.read();
+
+    if(b < 0x10) Serial.print("0");
+    Serial.print(b, HEX);
+    Serial.print(" ");
   }
 
-  Vector_Motion(finalVx, finalVy, 0, 1, 0);
-  Serial.print("vx= ");Serial.println(finalVx);
-  Serial.print("vy= ");Serial.println(finalVy);
+  Serial.println();
+  delay(20);*/
+
+  //Serial.println();
+  //Serial.print("vx= ");Serial.println(finalVx);
+  //Serial.print("vy= ");Serial.println(finalVy);
+  //Serial.print(" aim=");
+  //Serial.println(aim_offset);
   //Serial.println(gyroData.heading);
 }

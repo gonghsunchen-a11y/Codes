@@ -2,7 +2,7 @@
 
 #define IR A16
 
-#define SAMPLE_TIME_MS 50
+#define SAMPLE_TIME_MS 10
 #define IR_THRESHOLD 10
 
 uint32_t start_time = 0;

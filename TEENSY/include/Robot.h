@@ -59,13 +59,13 @@ unsigned long _lastUpdate = 0;
 //------------------------------
 
 //US Sensor
-#define front_us A15
-#define left_us A16
-#define back_us A17
-#define right_us A14
-#define alpha 0.15
-float pos_x_f = 0.0;
-float pos_y_f = 0.0;
+//#define front_us A15
+//#define left_us A16
+//#define back_us A17
+////#define right_us A14
+//#define alpha 0.15
+//float pos_x_f = 0.0;
+//float pos_y_f = 0.0;
 
 
 //Kicker
@@ -79,7 +79,7 @@ Adafruit_SSD1306 display(SCREEN_WIDTH, SCREEN_HEIGHT, &Wire, OLED_RESET);
 struct GyroData{float heading = 0.0; float pitch = 0.0; bool valid = false;} gyroData;
 //struct LineData{uint32_t state = 0x3FFFF; bool valid = false;} lineData;
 struct BallData{uint16_t angle = 0xFFFF; uint16_t possession = 255;uint8_t dist; bool valid = false; float Vx; float Vy;} ballData;
-struct MaixPosData {int16_t x = 0;int16_t y = 0;uint8_t status = 0;bool valid = false;bool ball_found = false;uint16_t ball_angle = 0xFFFF;uint8_t ball_dist = 0;} maixPosData;
+struct MaixPosData {int16_t x = 65535;int16_t y = 65535;uint8_t status = 0;bool valid = false;bool ball_found = false;uint16_t ball_angle = 0xFFFF;uint8_t ball_dist = 0;} maixPosData;
 struct FrontCam {int16_t x = 65535;int16_t y = 65535;int8_t h = 0;int8_t w = 0;bool valid = false;int16_t offset = 0;} frontcam;
 
 
@@ -139,7 +139,7 @@ void Robot_Init(){
   
   Serial.begin(115200);
   Serial3.begin(115200);
-  Serial4.begin(921600);
+  Serial4.begin(115200);
   Serial5.begin(921600);
   Serial6.begin(115200);
   Serial7.begin(115200);
@@ -165,10 +165,10 @@ void Robot_Init(){
   pinMode(BTN_ENTER, INPUT_PULLUP);
   pinMode(BTN_ESC, INPUT_PULLUP);
 
-  pinMode(front_us, INPUT);
-  pinMode(back_us, INPUT);
-  pinMode(left_us, INPUT);
-  pinMode(right_us, INPUT);
+  //pinMode(front_us, INPUT);
+  //pinMode(back_us, INPUT);
+  //pinMode(left_us, INPUT);
+  //pinMode(right_us, INPUT);
   
   pinMode(Kicker_Pin, OUTPUT);
   pinMode(Charge_Pin, OUTPUT);
@@ -444,6 +444,7 @@ void RobotIKControl(float vx, float vy, float omega,bool useRamp){
       SetMotorSpeed(i, (int8_t)current_p[i]);
     }
 }
+
 /*
 void RobotIKControl(float vx, float vy, float omega){
     float p1 = -0.643f * vx + 0.766f * vy + omega;
@@ -458,7 +459,7 @@ void RobotIKControl(float vx, float vy, float omega){
 }
 
 */
-void Vector_Motion(float Vx, float Vy, float rot_V, bool reset,bool useRamp) {
+/*void Vector_Motion(float Vx, float Vy, float rot_V, bool reset,bool useRamp) {
   float omega = 0.0;
   if(reset && rot_V == 0){
     control.robot_heading = 90;
@@ -494,7 +495,7 @@ void Vector_Motion(float Vx, float Vy, float rot_V, bool reset,bool useRamp) {
   else{
     RobotIKControl(Vx, Vy, omega,0);
   }
-}
+}*/
 /*
 void Vector_Motion(float Vx, float Vy){  
   float omega = 0.0;
@@ -507,27 +508,35 @@ void Vector_Motion(float Vx, float Vy){
   RobotIKControl(Vx, Vy, omega);
 }
 */
-/*void Vector_Motion(float Vx, float Vy, float target_offset){  
+void Vector_Motion(float Vx, float Vy, float target_offset ,bool reset){  
   float omega = 0.0;
   float current_gyro_heading = gyroData.heading;
   float sensor_heading = 90.0 - current_gyro_heading;
-  float final_target = 90 + target_offset;
+  float final_target;
+
+  if(reset){
+    final_target = 90.0f;                 // 平常快速回正
+  }
+  else{
+    final_target = 90.0f + target_offset; // 瞄準球門
+  }
   float e = final_target - sensor_heading;
+
   if (e > 180) e -= 360;
   if (e < -180) e += 360;
+
   if(fabs(e) > control.heading_threshold){
-      omega = e * control.P_factor;
+    omega = e * control.P_factor;
+
+    if(!reset){
+      //omega = constrain(omega, -6.0f, 6.0f); // 只有瞄準時慢轉
+    }
   }
-  if(control.robot_heading > 135){
-    control.robot_heading =  135;  
-  } 
-  else if(control.robot_heading < 45){
-    control.robot_heading = 45;  
-  }
-  RobotIKControl(Vx, Vy, omega);
+
+  RobotIKControl(Vx, Vy, omega,0);
 
 }
-*/
+
 void FC_Vector_Motion(int WVx, int WVy, float target_heading) {
     // 1. Convert gyro to Radians (math functions use radians)
     float rad = (target_heading-90)* (M_PI / 180.0);
@@ -570,7 +579,7 @@ void kicker_control(bool kick = false){
   static uint64_t last_charge_done = 0;
   static bool charging_state = false;
 
-  const uint32_t CHARGE_DURATION = 5000;   // ms needed to charge
+  const uint32_t CHARGE_DURATION = 3000;   // ms needed to charge
   const uint32_t CHARGE_TIMEOUT  = 8000;  // ms before recharging automatically
 
   uint64_t now = millis();

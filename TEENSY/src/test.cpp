@@ -87,21 +87,51 @@ void setup(){
 }*/
 
 void loop() {
-  readMaix();
-  
-    Serial.print("X=");
-    Serial.print(maixPosData.x);
-    Serial.print(" Y=");
-    Serial.print(maixPosData.y);
-    Serial.print(" status=");
-    Serial.println(maixPosData.status);
-  
+  FrontCam();if(frontcam.valid){Serial.println(frontcam.x);}
+  //SetMotorSpeed(1, -30);
+  //SetMotorSpeed(2, 30);
+  //SetMotorSpeed(3, 30);
+  //SetMotorSpeed(4, -30);
+  /*while(Serial8.available()){
+    uint8_t b = Serial8.read();
 
+    if(b < 0x10) Serial.print("0");
+    Serial.print(b, HEX);
+    Serial.print(" ");
+  }
+
+  Serial.println();*/
+  /*FrontCam();if(frontcam.valid){Serial.println(frontcam.offset);}
   
-    Serial.print(" Ball angle=");
-    Serial.print(maixPosData.ball_angle);
-    Serial.print(" dist=");
-    Serial.println(maixPosData.ball_dist);
+  uint8_t packet[3];
+  packet[0] = 0xAA;
+  packet[1] = frontcam.offset & 0xFF;
+  packet[2] = 0xEE;
+  Serial8.write(packet, 3);*/
+  /*
+  Serial4.write(0xDD);
+  delay(100);
+  uint32_t start = millis();
+  bool got = false;
+
+  while (millis() - start < 200) {
+    while (Serial4.available()) {
+      got = true;
+      uint8_t b = Serial4.read();
+
+      if (b < 11) Serial.print("0");
+      Serial.print(b, HEX);
+      Serial.print(" ");
+    }
+  }
+
+  if (!got) {
+    Serial.print("no data");
+  }
+
+  Serial.println();*/
+  //delay(500);
+  //FrontCam();if(frontcam.valid){Serial.println(frontcam.x);}
   //kicker_control(1);
   //Serial.print(" y=");Serial.println(maixPosData.y);
   //readBNO085Yaw();
