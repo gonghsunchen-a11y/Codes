@@ -309,7 +309,7 @@ if(state == SCANNING){
       if(maixPosData.ball_angle >= 83 && maixPosData.ball_angle <= 98){
         moving_degree = 90;
         ballspeed = 50;
-        
+        digitalWrite(LED_BUILTIN,HIGH);
         //kicker_control(1);
         //Serial.println(frontcam.offset);
         /*if(maixPosData.ball_dist <= 54 && maixPosData.ball_angle >=  87 && maixPosData.ball_angle <= 93){
@@ -323,10 +323,11 @@ if(state == SCANNING){
         }*/
       }
       else if(maixPosData.ball_angle > 100 && maixPosData.ball_angle < 155){
-        float offsetRatio = exp(-0.1 * (maixPosData.ball_dist - 65));
+        float offsetRatio = exp(-0.1 * (maixPosData.ball_dist - 60));
         offsetRatio = constrain(offsetRatio, 0.0, 1.0);
-        offset = 90 * offsetRatio;
+        offset = 80 * offsetRatio;
         moving_degree = maixPosData.ball_angle + offset;
+        digitalWrite(LED_BUILTIN,LOW);
         //float angleError = fabs(ballData.angle - 90);
         //float smoothWeight = constrain(angleError / 25.0f, 0.0f, 1.0f);
       }
@@ -336,18 +337,21 @@ if(state == SCANNING){
         offset = 100 * offsetRatio;
         //Serial.print(" offset=");Serial.print(offset);
         moving_degree = maixPosData.ball_angle + offset;
+        digitalWrite(LED_BUILTIN,LOW);
       }
       else if(maixPosData.ball_angle < 80 && maixPosData.ball_angle >= 25){
-        float offsetRatio = exp(-0.1 * (maixPosData.ball_dist - 65));
+        float offsetRatio = exp(-0.1 * (maixPosData.ball_dist - 60));
         offsetRatio = constrain(offsetRatio, 0.0, 1.0);
-        offset = 90 * offsetRatio;
+        offset = 80 * offsetRatio;
         moving_degree = maixPosData.ball_angle - offset;
+        digitalWrite(LED_BUILTIN,LOW);
       }
       else if(maixPosData.ball_angle < 25 || maixPosData.ball_angle > 270){
         float offsetRatio = exp(-0.03 * (maixPosData.ball_dist - 60));
         offsetRatio = constrain(offsetRatio, 0.0, 1.0);
         offset = 100*offsetRatio;
         moving_degree = maixPosData.ball_angle - offset;
+        digitalWrite(LED_BUILTIN,LOW);
       }
     
       if(moving_degree < 0) moving_degree += 360;
@@ -390,7 +394,7 @@ if(state == SCANNING){
   //Serial.println(aim_offset);
   //if(vy<40)vy=40;
   float angleError = fabs(ballData.angle - 90);
-  //float vxWeight = constrain(angleError / 25.0f, 0.5f, 1.0f);
+  float vxWeight = constrain(angleError / 25.0f, 0.0f, 1.0f);
   //vx = (int)round(vx* vxWeight);
   if(digitalRead(EAT_BALL_IR_PIN) == 0){
           //kicker_control(1);

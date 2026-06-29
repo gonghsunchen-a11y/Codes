@@ -122,8 +122,9 @@ void loop() {
   Serial.println();*/
   //FrontCam();if(frontcam.valid){Serial.println("front");}
   //delay(10);
-  Serial.println("test");
-  readMaix();if(maixPosData.valid){Serial.println("omni");}
+  //Serial.println("test");
+  //readMaix();if(maixPosData.valid){Serial.println("omni");}
+  digitalWrite(LED_BUILTIN,HIGH);
   /*
   uint8_t packet[3];
   packet[0] = 0xAA;

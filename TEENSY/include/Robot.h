@@ -134,7 +134,7 @@ void readBallCam();
 // ******************************************************
 
 void Robot_Init(){
-  //pinMode(13, OUTPUT);
+  pinMode(13, OUTPUT);
   //digitalWrite(13, HIGH);
   
   Serial.begin(115200);
