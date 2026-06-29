@@ -11,11 +11,15 @@ Servo ESC;  // Create ESC control object
 #define CMD_LINECAL_SAVE 0xEE
 #define CMD_LINECAL_DONE 0xDD
 
-#define RIGHT_SLOW_X 60
+#define RIGHT_SLOW_X 55
 #define RIGHT_STOP_X 70
-#define LEFT_SLOW_X -60
+#define LEFT_SLOW_X -55
 #define LEFT_STOP_X -70
-#define SIDE_SLOW_EXP 0.1f
+#define FRONT_SLOW_Y 70
+#define FRONT_STOP_Y 90
+#define BACK_SLOW_Y -70
+#define BACK_STOP_Y -90
+#define SIDE_SLOW_EXP 0.05f
 
 #define EAT_BALL_IR_PIN A16
 #define EAT_BALL_WINDOW 20
@@ -50,11 +54,11 @@ FLASHMEM void startup_middle_hook(void){
 }
 */
 void setup(){
-  pinMode(TX4,INPUT);
-  pinMode(RX4,INPUT);
-  pinMode(TX3,INPUT);
-  pinMode(RX3,INPUT);
-  delay(5000);  
+  //pinMode(TX4,INPUT);
+  //pinMode(RX4,INPUT);
+  //pinMode(TX3,INPUT);
+  //pinMode(RX3,INPUT);
+  //delay(5000);  
   Robot_Init();
   pinMode(EAT_BALL_IR_PIN, INPUT);
   ESC.attach(A17,1000,2000);
@@ -129,7 +133,7 @@ void drawState(const char *text){
 }
 
 // ------------------ Omni Mirror ------------------
-void applyOmniEdgeBrake(int16_t &vx){
+void applyOmniEdgeBrake(int16_t &vx,int16_t &vy){
   //Serial.print("x");Serial.print(maixPosData.x);
   if(!maixPosData.valid ){
     return;
@@ -159,6 +163,36 @@ void applyOmniEdgeBrake(int16_t &vx){
 
     if (x <= LEFT_SLOW_X) {
       float t = (LEFT_SLOW_X - x) / (LEFT_SLOW_X - LEFT_STOP_X);
+      t = constrain(t, 0.0f, 1.0f);
+
+      float scale = exp(-SIDE_SLOW_EXP * t);
+      vx = (int16_t)round(vx * scale);
+    }
+
+    return;
+  }
+  if(vy>0){  if(x >= FRONT_STOP_Y){
+      vy = 0;
+      return;
+    }
+
+    if(x >= FRONT_SLOW_Y){
+      float t = (x -FRONT_SLOW_Y) / (FRONT_STOP_Y - FRONT_SLOW_Y);
+      t = constrain(t, 0.0f, 1.0f);
+
+      float scale = exp(-SIDE_SLOW_EXP * t);
+      vx = (int16_t)round(vx * scale);
+    }
+
+    return;
+  }
+  if(vy<0){  if(x >= BACK_STOP_Y){
+      vy = 0;
+      return;
+    }
+
+    if(x >= BACK_SLOW_Y){
+      float t = (x -BACK_SLOW_Y) / (BACK_STOP_Y - BACK_SLOW_Y);
       t = constrain(t, 0.0f, 1.0f);
 
       float scale = exp(-SIDE_SLOW_EXP * t);
@@ -204,7 +238,7 @@ bool readEatBall(){
 }
 
 void loop(){
-  ESC.writeMicroseconds(1625);
+  
 
   if(state == READY){
   if(btnPressed(BTN_ENTER)){
@@ -250,47 +284,32 @@ if(state == SCANNING){
   ballsensor();
   readMaix();
   
-  //FrontCam();
+  FrontCam();
   //Serial.print(frontcam.offset);
   eat_ball = readEatBall();
   int16_t vx = 0;
   int16_t vy = 0;
   int8_t aim_offset = 0;
-  
+  ESC.writeMicroseconds(1625);
+  if(maixPosData.valid ){Serial.println("yes");}
+  if(frontcam.valid ){Serial.println("yesyes");}
   if(ballData.valid){
+    //Serial.print(" dis");Serial.println(ballData.dist);
+    //Serial.print(" angle");Serial.print(ballData.angle);
+
     if(maixPosData.valid && maixPosData.ball_found){
+
       float moving_degree = maixPosData.ball_angle;
       float offset = 0;
-      float ballspeed = constrain(map(maixPosData.ball_dist, 55, 85, 50, 80), 50, 80);
+      float ballspeed = constrain(map(maixPosData.ball_dist, 55, 80, 40, 60), 40, 60);
       //float ballspeedVx = constrain(map(maixPosData.ball_dist, 70, 85, 30, 50), 30, 50);
       //float ballspeedVy = constrain(map(maixPosData.ball_dist, 70, 85, 25, 50), 25, 50);
 
       //Serial.println(maixPosData.ball_dist);
-      if(maixPosData.ball_angle >= 80 && maixPosData.ball_angle <= 100){
+      if(maixPosData.ball_angle >= 83 && maixPosData.ball_angle <= 98){
         moving_degree = 90;
-        ballspeed = 60;
-        if(maixPosData.ball_dist <= 41 && maixPosData.ball_angle >= 85 && maixPosData.ball_angle <= 94 ){
-          kicker_control(1);
-        }
-        if(eat_ball){
-          //kicker_control(1);
-          //Serial.println(frontcam.offset);
-          vx = 0;
-          
-          if(frontcam.valid){
-            //Serial.print(frontcam.x);
-            aim_offset = constrain(frontcam.offset, -45, 45);
-            vy = 100;   // 90度往前衝
-            
-          }
-          else{
-            aim_offset = 0;
-            vy = 80;   // 90度往前衝
-          }
-        }
-        else{
-          aim_offset = 0;
-        }
+        ballspeed = 50;
+        
         //kicker_control(1);
         //Serial.println(frontcam.offset);
         /*if(maixPosData.ball_dist <= 54 && maixPosData.ball_angle >=  87 && maixPosData.ball_angle <= 93){
@@ -303,31 +322,31 @@ if(state == SCANNING){
           else{aim_offset = 0;}
         }*/
       }
-      else if(maixPosData.ball_angle > 100 && maixPosData.ball_angle < 180){
-        float offsetRatio = exp(-0.2 * (maixPosData.ball_dist - 65));
+      else if(maixPosData.ball_angle > 100 && maixPosData.ball_angle < 155){
+        float offsetRatio = exp(-0.1 * (maixPosData.ball_dist - 65));
         offsetRatio = constrain(offsetRatio, 0.0, 1.0);
-        offset = 75 * offsetRatio;
+        offset = 90 * offsetRatio;
         moving_degree = maixPosData.ball_angle + offset;
         //float angleError = fabs(ballData.angle - 90);
         //float smoothWeight = constrain(angleError / 25.0f, 0.0f, 1.0f);
       }
-      else if(maixPosData.ball_angle >= 180 && maixPosData.ball_angle <= 270){
-        float offsetRatio = exp(-0.01 * (maixPosData.ball_dist - 70));
+      else if(maixPosData.ball_angle >= 155 && maixPosData.ball_angle <= 270){
+        float offsetRatio = exp(-0.03 * (maixPosData.ball_dist - 60));
         offsetRatio = constrain(offsetRatio, 0.0, 1.0);
-        offset = 90 * offsetRatio;
+        offset = 100 * offsetRatio;
         //Serial.print(" offset=");Serial.print(offset);
         moving_degree = maixPosData.ball_angle + offset;
       }
-      else if(maixPosData.ball_angle < 80 && maixPosData.ball_angle >= 0){
-        float offsetRatio = exp(-0.2 * (maixPosData.ball_dist - 65));
+      else if(maixPosData.ball_angle < 80 && maixPosData.ball_angle >= 25){
+        float offsetRatio = exp(-0.1 * (maixPosData.ball_dist - 65));
         offsetRatio = constrain(offsetRatio, 0.0, 1.0);
-        offset = 75 * offsetRatio;
+        offset = 90 * offsetRatio;
         moving_degree = maixPosData.ball_angle - offset;
       }
-      else if(maixPosData.ball_angle < 360 && maixPosData.ball_angle > 270){
-        float offsetRatio = exp(-0.01 * (maixPosData.ball_dist - 70));
+      else if(maixPosData.ball_angle < 25 || maixPosData.ball_angle > 270){
+        float offsetRatio = exp(-0.03 * (maixPosData.ball_dist - 60));
         offsetRatio = constrain(offsetRatio, 0.0, 1.0);
-        offset = 90*offsetRatio;
+        offset = 100*offsetRatio;
         moving_degree = maixPosData.ball_angle - offset;
       }
     
@@ -337,19 +356,19 @@ if(state == SCANNING){
       vy = (int16_t)round(ballspeed * sin(moving_degree * DtoR_const));
 
       Serial.print(" ball=");Serial.print(maixPosData.ball_angle);
-      Serial.print(" balldist=");Serial.println(maixPosData.ball_dist);
-      //Serial.print(" balldist=");Serial.print(maixPosData.ball_dist);
+      Serial.print(" balldist=");Serial.print(maixPosData.ball_dist);
+      Serial.print(" balldist=");Serial.print(maixPosData.ball_dist);
       Serial.print(" move=");Serial.println(moving_degree);
 
     }
     else{
       if(ballData.valid){
       float moving_degree = ballData.angle;
-      float ballspeed = 80;
+      float ballspeed = constrain(map(ballData.dist, 8, 2, 40, 60), 40, 60);
       //if(ballData.dist>=6){ballspeed =50;}
       //else{ballspeed=80;}
       //Serial.print(" valid");Serial.print(ballData.valid);
-      //Serial.print(" dis");Serial.print(ballData.dist);
+      //Serial.print(" dis");Serial.println(ballData.dist);
       //Serial.print(" angle");Serial.print(ballData.angle);
       //Serial.print(" moving");Serial.println(moving_degree);
       if(moving_degree < 0) moving_degree += 360;
@@ -371,9 +390,29 @@ if(state == SCANNING){
   //Serial.println(aim_offset);
   //if(vy<40)vy=40;
   float angleError = fabs(ballData.angle - 90);
-  float vxWeight = constrain(angleError / 20.0f, 0.8f, 1.0f);
-  vx = (int)round(vx* vxWeight);
-  applyOmniEdgeBrake(vx);
+  //float vxWeight = constrain(angleError / 25.0f, 0.5f, 1.0f);
+  //vx = (int)round(vx* vxWeight);
+  if(digitalRead(EAT_BALL_IR_PIN) == 0){
+          //kicker_control(1);
+          //Serial.println("eat");
+          vx = 0;
+          
+          if(frontcam.valid){
+            //Serial.print(frontcam.x);
+            aim_offset = constrain(frontcam.offset*1.5, -45, 45);
+            vy = 80;   // 90度往前衝
+            
+          }
+          else{
+            aim_offset = 0;
+            vy = 50;   // 90度往前衝
+          }
+          kicker_control(1);
+        }
+        else{
+          aim_offset = 0;
+        }
+  applyOmniEdgeBrake(vx,vy);
    /* if(maixPosData.valid && maixPosData.ball_found){
       float moving_degree = maixPosData.ball_angle;
       float ballspeed = 30;

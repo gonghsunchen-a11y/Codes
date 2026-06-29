@@ -78,7 +78,7 @@ Adafruit_SSD1306 display(SCREEN_WIDTH, SCREEN_HEIGHT, &Wire, OLED_RESET);
 
 struct GyroData{float heading = 0.0; float pitch = 0.0; bool valid = false;} gyroData;
 //struct LineData{uint32_t state = 0x3FFFF; bool valid = false;} lineData;
-struct BallData{uint16_t angle = 0xFFFF; uint16_t possession = 255;uint8_t dist; bool valid = false; float Vx; float Vy;} ballData;
+struct BallData{uint16_t angle = 0xFFFF; uint16_t possession = 255;uint16_t dist; bool valid = false; float Vx; float Vy;} ballData;
 struct MaixPosData {int16_t x = 65535;int16_t y = 65535;uint8_t status = 0;bool valid = false;bool ball_found = false;uint16_t ball_angle = 0xFFFF;uint8_t ball_dist = 0;} maixPosData;
 struct FrontCam {int16_t x = 65535;int16_t y = 65535;int8_t h = 0;int8_t w = 0;bool valid = false;int16_t offset = 0;} frontcam;
 
@@ -579,7 +579,7 @@ void kicker_control(bool kick = false){
   static uint64_t last_charge_done = 0;
   static bool charging_state = false;
 
-  const uint32_t CHARGE_DURATION = 3000;   // ms needed to charge
+  const uint32_t CHARGE_DURATION = 1000;   // ms needed to charge
   const uint32_t CHARGE_TIMEOUT  = 8000;  // ms before recharging automatically
 
   uint64_t now = millis();

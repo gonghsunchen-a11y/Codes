@@ -4,7 +4,7 @@
 #include <Arduino.h>
 #include <math.h>
 #include <Robot.h>
-
+#define BALL A16
 /*void SetMotorSpeed(uint8_t port, int8_t speed){
   speed = constrain(speed,-1.5 * 50, 1.5 * 50);
   int pwmVal = abs(speed) * 255 / 100;
@@ -64,6 +64,8 @@
 void setup(){
     Robot_Init();
     Serial2.begin(115200);
+    pinMode(BALL,INPUT);
+
     /*pinMode(DIR_1,OUTPUT);
     pinMode(DIR_2,OUTPUT);
     pinMode(DIR_3,OUTPUT);
@@ -87,7 +89,24 @@ void setup(){
 }*/
 
 void loop() {
-  FrontCam();if(frontcam.valid){Serial.println(frontcam.x);}
+  /*
+  readMaix();
+  
+    Serial.print("X=");
+    Serial.print(maixPosData.x);
+    Serial.print(" Y=");
+    Serial.print(maixPosData.y);
+    Serial.print(" status=");
+    Serial.println(maixPosData.status);
+  
+
+  
+    Serial.print(" Ball angle=");
+    Serial.print(maixPosData.ball_angle);
+    Serial.print(" dist=");
+    Serial.println(maixPosData.ball_dist);
+    */
+  //Serial.println(digitalRead(BALL));
   //SetMotorSpeed(1, -30);
   //SetMotorSpeed(2, 30);
   //SetMotorSpeed(3, 30);
@@ -101,8 +120,11 @@ void loop() {
   }
 
   Serial.println();*/
-  /*FrontCam();if(frontcam.valid){Serial.println(frontcam.offset);}
-  
+  //FrontCam();if(frontcam.valid){Serial.println("front");}
+  //delay(10);
+  Serial.println("test");
+  readMaix();if(maixPosData.valid){Serial.println("omni");}
+  /*
   uint8_t packet[3];
   packet[0] = 0xAA;
   packet[1] = frontcam.offset & 0xFF;
