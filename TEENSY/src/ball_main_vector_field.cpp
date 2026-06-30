@@ -11,6 +11,8 @@ Servo ESC;
 #define CMD_LINECAL_SAVE 0xEE
 #define CMD_LINECAL_DONE 0xDD
 
+// SLOW：從這個座標開始減速；STOP：到這個座標時推回力最強。
+// 把 SLOW 往場中央移會更安全；把 STOP 往外移可用範圍較大但更容易出界。
 #define RIGHT_SLOW_X 55.0f
 #define RIGHT_STOP_X 70.0f
 #define LEFT_SLOW_X -55.0f
@@ -107,6 +109,8 @@ void updateBallPrediction(float ball_angle) {
 
     float delta = normalizeAngle180(ball_angle - ballField.last_angle);
     float measured_rate = delta / dt;
+    // 角速度濾波：0.75 是舊資料、0.25 是新資料，兩者要加起來等於 1。
+    // 舊資料比例調大會更穩但反應慢；新資料比例調大會更靈敏但更容易抖。
     ballField.angle_rate =
         0.75f * ballField.angle_rate + 0.25f * measured_rate;
 
@@ -114,15 +118,21 @@ void updateBallPrediction(float ball_angle) {
     ballField.last_update_us = now;
   }
 
+  // 預測提前量（秒）：調大會更早預判球的位置，但太大容易預測過頭。
+  // 建議先在 0.05～0.15 之間調整。
   const float look_ahead_seconds = 0.10f;
   float predicted_angle =
       ball_angle + ballField.angle_rate * look_ahead_seconds;
   ballField.predicted_error =
       normalizeAngle180(predicted_angle - 90.0f);
 
+  // 球與正前方誤差小於 18 度就停止繞球、進入直線收球。
+  // 18 調大：更早直衝；調小：要對得更準才直衝。
   if (!ballField.capture_mode &&
       fabs(ballField.predicted_error) < 18.0f) {
     ballField.capture_mode = true;
+  // 已進入收球後，誤差大於 32 度才重新繞球。
+  // 32 必須大於上面的 18，否則模式會在臨界角度一直切換。
   } else if (ballField.capture_mode &&
              fabs(ballField.predicted_error) > 32.0f) {
     ballField.capture_mode = false;
@@ -130,10 +140,10 @@ void updateBallPrediction(float ball_angle) {
 }
 
 void applyCaptureControl(int16_t &vx, int16_t &vy) {
-  const float speed = 60.0f;
-  const float kp = 0.9f;
-  const float kd = 0.06f;
-  const float max_lateral = 35.0f;
+  const float speed = 60.0f;       // 收球合成速度：大=追得快，小=比較穩。
+  const float kp = 0.9f;           // 角度修正力：大=轉向強，但太大會左右震盪。
+  const float kd = 0.06f;          // 抑制快速偏移：大=煞得強，但太大會受雜訊影響。
+  const float max_lateral = 35.0f; // 最大左右速度：大=救偏球更強，小=走得更直。
 
   float lateral =
       -(kp * ballField.predicted_error + kd * ballField.angle_rate);
@@ -161,20 +171,34 @@ void applyBallVectorField(int16_t &vx, int16_t &vy) {
   float tangent_x = -ballField.orbit_side * radial_y;
   float tangent_y = ballField.orbit_side * radial_x;
 
+  // 想保持的繞球半徑，不是「開始繞球的距離」。
+  // 調大：離球較遠繞；調小：更貼近球，但更容易碰到球。
   const float target_distance = 60.0f;
+
+  // 2.2 是半徑修正增益：大=快速回到目標半徑，但可能前後震盪。
   float radial_speed = (distance - target_distance) * 2.2f;
+
+  // -15：太近時最大退球速度；55：太遠時最大接近速度。
+  // 把 -15 改得更負會更積極避開球；把 55 調大會更快接近球。
   radial_speed = constrain(radial_speed, -15.0f, 55.0f);
 
+  // 距離 75 以上 near_ratio=0；距離 55 以下 near_ratio=1。
+  // 75 調大會更早加強繞球；20 調大會讓速度變化更平緩。
   float near_ratio = (75.0f - distance) / 20.0f;
   near_ratio = constrain(near_ratio, 0.0f, 1.0f);
 
+  // 遠處切向速度是 20，靠近後最多再加 50，所以最大約 70。
+  // 第一個值控制遠距離繞球速度；第二個值控制靠近後增加多少。
   float tangent_speed = 20.0f + 50.0f * near_ratio;
 
+  // 球進入正前方 30 度範圍後，逐漸由繞球切換成向球前進。
+  // 30 調大：更早向球切入；調小：繞到更正才切入。
   float front_blend =
       1.0f - fabs(ballField.predicted_error) / 30.0f;
   front_blend = constrain(front_blend, 0.0f, 1.0f);
 
   tangent_speed *= 1.0f - front_blend;
+  // 完全對準時，將朝球速度混合到 60；調大會更快直衝球。
   radial_speed =
       radial_speed * (1.0f - front_blend) + 60.0f * front_blend;
 
@@ -183,6 +207,7 @@ void applyBallVectorField(int16_t &vx, int16_t &vy) {
   float command_y =
       radial_speed * radial_y + tangent_speed * tangent_y;
 
+  // 繞球模式的最大合成速度；調大較快但容易打滑或繞過頭。
   const float max_speed = 70.0f;
   float magnitude = sqrtf(command_x * command_x + command_y * command_y);
 
@@ -198,6 +223,8 @@ void applyBallVectorField(int16_t &vx, int16_t &vy) {
 
 void applyIRChase(int16_t &vx, int16_t &vy) {
   float radians = ballData.angle * DtoR_const;
+  // ESP32 備援追球速度：dist=6 時約 40，dist=2 時約 70。
+  // 40 是遠／弱訊號時的最低速度；70 是近／強訊號時的最高速度。
   float speed = constrain(map(ballData.dist,6,2,40,70),40.0f,70.0f);
 
   vx = (int16_t)roundf(speed * cosf(radians));
@@ -211,6 +238,7 @@ void applyBoundaryVectorField(int16_t &vx, int16_t &vy) {
   float y = maixPosData.y;
   float out_x = vx;
   float out_y = vy;
+  // 邊界推回強度：調大較不易出界，但會更明顯干擾追球路徑。
   const float push = 35.0f;
 
   if (x > RIGHT_SLOW_X) {
@@ -326,7 +354,9 @@ void loop() {
   readBNO085Yaw();
   ballsensor();
   readMaix();
-  eat_ball = digitalRead(EAT_BALL_IR_PIN) == LOW;
+  eat_ball = digitalRead(EAT_BALL_IR_PIN) == HIGH;
+  // 吸球馬達 ESC 脈波：調大通常吸力更強，但耗電、發熱也會增加。
+  // 建議每次只增加 10～25 us，並確認 ESC 與馬達安全範圍。
   ESC.writeMicroseconds(1625);
 
   int16_t vx = 0;
@@ -335,9 +365,11 @@ void loop() {
   if (eat_ball) {
     resetBallField();
     vx = 0;
-    vy = 80;
+    vy = 80;  // 吃到球後的前進速度：大=衝得快，小=持球較穩。
     FrontCam();
     if (frontcam.valid) {
+      // 1.5 是球門瞄準增益：大=轉得快但容易震盪；小=平穩但對準較慢。
+      // -45～45 是最大旋轉修正範圍，放大會允許更激烈的轉向。
       aim_offset =(int8_t)constrain(frontcam.offset * 1.5f, -45.0f, 45.0f);
     }
 
@@ -363,6 +395,6 @@ void loop() {
       //kicker_control(false);
   }
 
-  applyBoundaryVectorField(vx, vy);
+  //applyBoundaryVectorField(vx, vy);
   sendMovePacket(vx, vy, aim_offset);
 }
