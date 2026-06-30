@@ -89,7 +89,7 @@ void setup(){
 }*/
 
 void loop() {
-  /*
+  
   readMaix();
   
     Serial.print("X=");
@@ -105,7 +105,7 @@ void loop() {
     Serial.print(maixPosData.ball_angle);
     Serial.print(" dist=");
     Serial.println(maixPosData.ball_dist);
-    */
+    
   //Serial.println(digitalRead(BALL));
   //SetMotorSpeed(1, -30);
   //SetMotorSpeed(2, 30);
@@ -124,7 +124,7 @@ void loop() {
   //delay(10);
   //Serial.println("test");
   //readMaix();if(maixPosData.valid){Serial.println("omni");}
-  digitalWrite(LED_BUILTIN,HIGH);
+  //digitalWrite(LED_BUILTIN,HIGH);
   /*
   uint8_t packet[3];
   packet[0] = 0xAA;
