@@ -77,7 +77,7 @@ void setup(){
     }
     ESC.writeMicroseconds(1500);
     Serial.println("Initialization complete.");
-    delay(5000);  // Optional pause before starting loop
+    delay(2000);  // Optional pause before starting loop
 }
 
 void showBallDirection() {
@@ -293,7 +293,7 @@ if(state == SCANNING){
   ESC.writeMicroseconds(1625);
   //if(maixPosData.valid ){Serial.println("yes");}
   //if(frontcam.valid ){Serial.println("yesyes");}
-  if(digitalRead(EAT_BALL_IR_PIN) == 1){
+  if(digitalRead(EAT_BALL_IR_PIN) == 0){
           FrontCam();
           //kicker_control(1);
           //Serial.println("eat");
