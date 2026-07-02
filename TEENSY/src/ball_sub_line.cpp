@@ -32,7 +32,7 @@ float lineVx = 0;
 float lineVy = 0;
 float init_lineDegree = -1;
 float diff = 0;
-bool overhalf = false;
+//bool overhalf = false;
 bool first_detect = false;
 uint32_t speed_timer = 0;
 
@@ -152,16 +152,16 @@ bool moveBackInBounds(){
 
     float finalDegree;
     if(diff > EMERGENCY_THRESHOLD){
-      overhalf = true;
+      //overhalf = true;
       finalDegree = fmod(init_lineDegree + 180.0f, 360.0f);
     }
     else{
-      overhalf = false;
+      //overhalf = false;
       finalDegree = fmod(lineDegree + 180.0f, 360.0f);
     }
 
-    lineVx = 70.0f * cos(finalDegree * DtoR_const);
-    lineVy = 70.0f * sin(finalDegree * DtoR_const);
+    lineVx = 90.0f * cos(finalDegree * DtoR_const);
+    lineVy = 90.0f * sin(finalDegree * DtoR_const);
     return true;
   }
 
@@ -291,5 +291,5 @@ void loop(){
   //Serial.print("vy= ");Serial.println(finalVy);
   //Serial.print(" aim=");
   //Serial.println(aim_offset);
-  //Serial.println(gyroData.heading);
+  Serial.println(gyroData.pitch);
 }

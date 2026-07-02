@@ -272,7 +272,7 @@ void FrontCam() {
   if(buffer[0] == 0xCC && buffer[10] == 0xEE){
     uint8_t checksum = (buffer[1] + buffer[2] + buffer[3] + buffer[4]+ buffer[5]+ buffer[6]+ buffer[7]+ buffer[8]) & 0xFF;
     if(checksum == buffer[9]){
-      //Serial.printf("duration: %ld\n", micros() - start);
+      Serial.printf("duration: %ld\n", micros() - start);
       frontcam.valid = true;
       frontcam.x =  (uint16_t)buffer[1] | ((uint16_t)buffer[2] << 8);
       frontcam.y =  (uint16_t)buffer[3] | ((uint16_t)buffer[4] << 8);
@@ -529,14 +529,14 @@ void Vector_Motion(float Vx, float Vy, float target_offset ,bool reset){
     omega = e * control.P_factor;
 
     if(!reset){
-      //omega = constrain(omega, -6.0f, 6.0f); // 只有瞄準時慢轉
+      omega = constrain(omega, -6.0f, 6.0f); // 只有瞄準時慢轉
     }
   }
 
   RobotIKControl(Vx, Vy, omega,0);
 
 }
-
+/*
 void FC_Vector_Motion(int WVx, int WVy, float target_heading) {
     // 1. Convert gyro to Radians (math functions use radians)
     float rad = (target_heading-90)* (M_PI / 180.0);
@@ -562,7 +562,43 @@ void FC_Vector_Motion(int WVx, int WVy, float target_heading) {
     // 4. Send to IK Control
     RobotIKControl(robot_vx, robot_vy, (int8_t)omega);
 }
+*/
+void FC_Vector_Motion(
+    int robot_vx,
+    int robot_vy,
+    float target_heading) {
 
+  float omega = 0;
+
+  float current_gyro_heading =
+      90.0f - gyroData.heading;
+
+  float e =
+      target_heading -
+      current_gyro_heading;
+
+  while (e > 180.0f) {
+    e -= 360.0f;
+  }
+
+  while (e < -180.0f) {
+    e += 360.0f;
+  }
+
+  // 完全維持原本角速度控制
+  if (fabs(e) >
+      control.heading_threshold) {
+
+    omega =
+        e * control.P_factor;
+  }
+
+  RobotIKControl(
+      (int8_t)robot_vx,
+      (int8_t)robot_vy,
+      (int8_t)omega,0
+  );
+}
 void Degree_Motion(float moving_degree, int8_t speed){
   if(moving_degree > 360.0 || moving_degree < 0.0){
       MotorStop();
@@ -573,13 +609,13 @@ void Degree_Motion(float moving_degree, int8_t speed){
   Vector_Motion(Vx, Vy, 0,1,false);
 }
 
-
+/*
 void kicker_control(bool kick = false){
   static uint64_t charge_start = 0;
   static uint64_t last_charge_done = 0;
   static bool charging_state = false;
 
-  const uint32_t CHARGE_DURATION = 1000;   // ms needed to charge
+  const uint32_t CHARGE_DURATION = 3000;   // ms needed to charge
   const uint32_t CHARGE_TIMEOUT  = 8000;  // ms before recharging automatically
 
   uint64_t now = millis();
@@ -618,7 +654,109 @@ void kicker_control(bool kick = false){
     charging_state = false;
   }
 }
+*/
+/*
+void kicker_control(bool kick = false){
+  static uint32_t charge_start_time = 0;
+  static bool is_charged = false;
+  static bool is_charging = false;
 
+  const uint32_t CHARGE_MS = 3000;
+  uint32_t now = millis();
+
+  if(kick && is_charged){
+    digitalWrite(Kicker_Pin, HIGH);
+    delay(15);
+    digitalWrite(Kicker_Pin,LOW);
+
+    analogWrite(Charge_Pin,0);
+    is_charged = false;
+    is_charging = false;
+    Serial.println("kick");
+    return;
+  }
+
+  if(!is_charged&&!is_charging){
+    charge_start_time=now;
+    is_charging = true;
+    Serail.println("charging");
+  }
+
+  if(is_charging){
+    uint32_t elapsed = now - charge_start_time;
+    if( elapsed >= CHARGE_MS){
+      analogWrite(Charge_Pin,255);
+      is_charging = false;
+      is_charged = false;
+      Serial.println("ready")
+    }
+    else{
+      uint8_t duty = (uint8_t)(elapsed *255UL)/CHARGE_MS;
+      analogWrite = (Charge_Pin, duty);
+    }
+  }
+}*/
+void kicker_control(bool kick = false) {
+  static uint8_t shots_left = 2;
+  static uint32_t last_kick_time = 0;
+  static uint32_t rest_start_time = 0;
+  static bool resting = false;
+  static bool previous_kick = false;
+
+  const uint32_t KICK_INTERVAL_MS = 500;
+  const uint32_t REST_MS = 2000;
+
+  uint32_t now = millis();
+
+  // 只在 kick 從 false 變成 true 時觸發一次
+  bool kick_pressed = kick && !previous_kick;
+  previous_kick = kick;
+
+  // 第二踢後的休息與充電
+  if (resting) {
+    uint32_t elapsed = now - rest_start_time;
+
+    // 逐漸增加充電輸出
+    uint8_t duty =
+        (uint8_t)(min(elapsed, REST_MS) * 255UL / REST_MS);
+
+    analogWrite(Charge_Pin, duty);
+
+    if (elapsed >= REST_MS) {
+      analogWrite(Charge_Pin, 255);
+      shots_left = 2;
+      resting = false;
+      Serial.println("ready: 2 shots");
+    }
+
+    return;  // 休息期間禁止射門
+  }
+
+  // 有射門指令、仍有次數，而且已間隔 500 ms
+  if (kick_pressed &&
+      shots_left > 0 &&
+      (last_kick_time == 0 ||
+       now - last_kick_time >= KICK_INTERVAL_MS)) {
+
+    digitalWrite(Kicker_Pin, HIGH);
+    delay(15);
+    digitalWrite(Kicker_Pin, LOW);
+
+    shots_left--;
+    last_kick_time = millis();
+
+    Serial.print("kick, shots left: ");
+    Serial.println(shots_left);
+
+    // 第二次射門後開始休息充電
+    if (shots_left == 0) {
+      analogWrite(Charge_Pin, 0);
+      rest_start_time = last_kick_time;
+      resting = true;
+      Serial.println("resting and charging");
+    }
+  }
+}
 /*
 void readBallCam(){
     

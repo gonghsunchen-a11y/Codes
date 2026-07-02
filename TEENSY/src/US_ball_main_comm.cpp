@@ -398,6 +398,12 @@ void loop(){
   ballData.Vy = vy;
   sendMovePacket(vx, vy);
   drawRunScreen(ballData.valid ? "BALL" : "HOME", vx, vy);
+  Serial.print("front US: ");
+  Serial.println(us_dist_cm[US_FRONT]);  
   Serial.print("Left US: ");
+  Serial.println(us_dist_cm[US_LEFT]);  
+  Serial.print("right US: ");
+  Serial.println(us_dist_cm[US_RIGHT]);  
+  Serial.print("back US: ");
   Serial.println(us_dist_cm[US_BACK]);  
 }

@@ -89,7 +89,11 @@ void setup(){
 }*/
 
 void loop() {
-  
+  /*
+  readBNO085Yaw();
+  Serial.println(gyroData.heading);*/
+  /*
+
   readMaix();
   
     Serial.print("X=");
@@ -105,8 +109,9 @@ void loop() {
     Serial.print(maixPosData.ball_angle);
     Serial.print(" dist=");
     Serial.println(maixPosData.ball_dist);
-    
+    */
   //Serial.println(digitalRead(BALL));
+  //kicker_control(1);
   //SetMotorSpeed(1, -30);
   //SetMotorSpeed(2, 30);
   //SetMotorSpeed(3, 30);

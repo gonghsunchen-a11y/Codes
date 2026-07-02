@@ -5,31 +5,20 @@
 #include <math.h>
 #include <Robot.h>
 
-int offset;
-
+#define COM1 36
+#define COM2 37
+#define eat A16
 void setup(){
-    Robot_Init();
-    Serial2.begin(115200);
+  Robot_Init();
+  pinMode(COM1, INPUT);
+  pinMode(COM2, INPUT);
+  pinMode(A16, INPUT);
 }
 
 
 
 void loop(){
-  readBNO085Yaw();
-  while(Serial8.available()){
-    if(Serial8.available() < 3) return;
-
-    if(Serial8.read() != 0xAA) continue;
-
-    uint8_t buffer[3];
-    buffer[0] = 0xAA;
-    int8_t ofst  = buffer[1];
-    buffer[2] = 0xEE;
-
-    offset = ofst;
-    return;
-  }
-  Serial.println(offset);
-  Vector_Motion(0,0,offset);
-  
+  Serial.println(digitalRead(eat));
+if(digitalRead(eat) == 0){kicker_control(1);}
+else{kicker_control(0);}
 } 
