@@ -16,18 +16,17 @@ Servo ESC;
 #define COM2 37
 
 #define RIGHT_SLOW_X 55.0f
-#define RIGHT_STOP_X 70.0f
+#define RIGHT_STOP_X 80.0f
 #define LEFT_SLOW_X -55.0f
-#define LEFT_STOP_X -70.0f
-#define FRONT_SLOW_Y 50.0f
-#define FRONT_STOP_Y 80.0f
-#define BACK_SLOW_Y -50.0f
-#define BACK_STOP_Y -80.0f
-#define SIDE_SLOW_EXP 1.2f
+#define LEFT_STOP_X -80.0f
+#define FRONT_SLOW_Y 40.0f
+#define FRONT_STOP_Y 70.0f
+#define BACK_SLOW_Y -40.0f
+#define BACK_STOP_Y -65.0f
+#define SIDE_SLOW_EXP 4.0
 #define SIDE_SLOW_DIST 60.0f
 #define SIDE_STOP_DIST 30.0f
 #define SIDE_DANGER_DIST 20.0f
-#define SIDE_SLOW_EXP 2.0f
 #define SIDE_PUSH_SPEED 25
 
 #define EAT_BALL_IR_PIN A16
@@ -46,8 +45,6 @@ Servo ESC;
 #define US_INVALID_DISTANCE 999.0f
 #define US_FILTER_ALPHA 0.35f
 #define US_INVALID_LIMIT 3
-#define SIDE_SLOW_DIST 70.0f
-#define SIDE_STOP_DIST 40.0f
 
 float filtered_pos_x = 0.0f;
 float filtered_pos_y = 0.0f;
@@ -60,17 +57,6 @@ MainState state = READY;
 bool eat_ball = false;
 bool com_attack_active = false;
 uint32_t last_stop_command_ms = 0;
-
-enum CornerShotState {
-  CORNER_IDLE,
-  CORNER_BACKUP,
-  CORNER_AIM,
-  CORNER_SHOOT,
-  CORNER_WAIT_BALL_LEAVE
-};
-
-CornerShotState cornerShotState = CORNER_IDLE;
-uint32_t cornerShotTimer = 0;
 
 struct BallFieldState {
   int8_t orbit_side = 0;
@@ -532,12 +518,12 @@ void applyOmniEdgeBrake(
     int16_t &vx,
     int16_t &vy) {
 
-  if (!maixPosData.valid) {
+  if (!filtered_pos_valid) {
     return;
   }
 
-  float x = maixPosData.x;
-  float y = maixPosData.y;
+  float x = filtered_pos_x;
+  float y = filtered_pos_y;
 
   if (vx > 0) {
     if (x >= RIGHT_STOP_X) {
@@ -813,30 +799,15 @@ void updateKalmanPosition() {
   filtered_pos_valid = true;
 }
   
-void setup() {
+void setup() { 
   Robot_Init();
   setupUS();
   pinMode(
       EAT_BALL_IR_PIN,
       INPUT
-  );
-
+  ); 
   pinMode(COM1, INPUT);
   pinMode(COM2, INPUT);
-/*
-  ESC.attach(
-      A17,
-      1000,
-      2000
-  );
-
-  ESC.writeMicroseconds(1000);
-  delay(1500);
-
-  for (int i = 0; i <= 20; i++) {
-    ESC.writeMicroseconds(1000);
-    delay(20);
-  }*/
 }
 
 
@@ -889,9 +860,6 @@ void loop() {
     }
 
     resetBallField();
-
-    cornerShotState =
-        CORNER_IDLE;
 
     kicker_control(false);
     //ESC.writeMicroseconds(1000);
@@ -986,9 +954,9 @@ void loop() {
   ballsensor();
   readMaix();
   updateKalmanPosition();
-  Serial.print("x= ");Serial.print(filtered_pos_x);
-  Serial.print(" y= ");Serial.print(filtered_pos_y);
   
+  Serial.print("x= ");Serial.print(filtered_pos_x);
+  Serial.print(" y= ");Serial.println(filtered_pos_y);
  // FrontCam();if(frontcam.valid){Serial.println("front");};
   
   eat_ball =
@@ -1016,39 +984,36 @@ static bool kick_sent = false;
   }
 
   was_eating_ball = true;
-
+  int8_t x = filtered_pos_x;
   vx = 0;
   vy = 50;
+  
+    if(x<-30){
+      aim_offset = -15;
+    }
+    else if(x > 30){
+      aim_offset = 15;
+    }
+    else{aim_offset = 0;}
 
-      kicker_control(true);
-      /*
-    if (eat_ball) {
-      resetBallField();
-      FrontCam();
-
-      if (frontcam.valid) {
-        float move_offset = 
-            -frontcam.offset 
-        ;
-
-        // 正前方是 90 度
-        float move_angle = 90.0f + move_offset;
-        float radians = move_angle * DtoR_const;
-        float speed = 80.0f;
-
-        vx = (int16_t)roundf(speed * cosf(radians));
-        vy = (int16_t)roundf(speed * sinf(radians));
-
-        aim_offset = 0;  // 不轉頭
-      } else {
-        vx = 0;
-        vy = 50;
-        aim_offset = 0;
-      }*/
-
-      //kicker_control(true);
+    if(!kick_sent && millis() - eat_ball_start > 50UL){
+      kicker_control(1);
+      kick_sent = true;
+    }else{
+      kicker_control(0);
+    }
+    if(filtered_pos_x>65&&filtered_pos_y>80||filtered_pos_x<-65&&filtered_pos_y>80){
+      vy=10;
+      aim_offset=0;
+      kicker_control(0);
+    }
     } else {
+      was_eating_ball = false;
+      eat_ball_start = 0;
+      kick_sent = false;
+
       kicker_control(false);
+      /*
       if (ballData.valid) {
         if (maixPosData.valid &&
             maixPosData.ball_found) {
@@ -1075,16 +1040,42 @@ static bool kick_sent = false;
       } else {
         resetBallField();
       }
+    }*/
+   if (ballData.valid) {
+  if (maixPosData.valid && maixPosData.ball_found) {
+
+    float diff = fabs(normalizeAngle180(
+        ballData.angle - maixPosData.ball_angle
+    ));
+
+    if (diff > 100.0f) {
+      resetBallField();
+      applyIRChase(vx, vy);  // 角度差大，優先紅外線
+    } else {
+      updateBallPrediction(maixPosData.ball_angle);
+
+      if (ballField.capture_mode) {
+        applyCaptureControl(vx, vy);
+      } else {
+        applyBallVectorField(vx, vy);
+      }
+    }
+
+  } else {
+    resetBallField();
+    applyIRChase(vx, vy);
+  }
+} else {
+  resetBallField();
+}
     }
   
 
   applyOmniEdgeBrake(vx, vy);
-  applySideUSBrake(vy);
-  applySideUS(vx);
-  aim_offset =constrain(
-    calculateAimOffset(),-50,50);
-    if(filtered_pos_x <40&&filtered_pos_x>-40){aim_offset=0;}
-   Serial.print(" offset ");Serial.println(aim_offset);
+  //applySideUSBrake(vy);
+  //applySideUS(vx);
+    /*fif(filtered_pos_x <40&&filtered_pos_x>-40){aim_offset=0;}
+   Serial.print(" offset ");Serial.println(aim_offset);*/
   sendMovePacket(
       vx,
       vy,

@@ -82,7 +82,12 @@ struct BallData{uint16_t angle = 0xFFFF; uint16_t possession = 255;uint16_t dist
 struct MaixPosData {int16_t x = 65535;int16_t y = 65535;uint8_t status = 0;bool valid = false;bool ball_found = false;uint16_t ball_angle = 0xFFFF;uint8_t ball_dist = 0;} maixPosData;
 struct FrontCam {int16_t x = 65535;int16_t y = 65535;int8_t h = 0;int8_t w = 0;bool valid = false;int16_t offset = 0;} frontcam;
 
-
+struct GoalData {
+  bool valid = false;
+  uint16_t angle = 0xFFFF;
+  uint16_t dist = 0xFFFF;
+  uint32_t last_update = 0;
+} goalData;
 
 //float ballDegreelist[18]={0,22.5,45,67.5,87.5,92.5,112.5,135,157.5,180,202.5,225,240,267.5,272.5,300,315,337.5};
 float linesensorDegreelist[32] = {
@@ -284,6 +289,66 @@ void FrontCam() {
   else{
     maixPosData.valid = false;  // checksum error
   }
+}
+
+void readGoal() {
+  uint8_t buffer[9];
+
+  goalData.valid = false;
+
+  // 清除上一次殘留資料
+  while (Serial3.available()) {
+    Serial3.read();
+  }
+
+  // 要求相機回傳球門資料
+  Serial3.write(0xDD);
+
+  uint32_t start = millis();
+
+  
+  Serial3.readBytes(buffer, 9);
+
+  // CC DD found angleL angleH distL distH checksum EE
+  if (buffer[0] != 0xCC ||
+      buffer[1] != 0xDD ||
+      buffer[8] != 0xEE) {
+    return;
+  }
+
+  uint8_t checksum = (
+      0xDD +
+      buffer[2] +
+      buffer[3] +
+      buffer[4] +
+      buffer[5] +
+      buffer[6]
+  ) & 0xFF;
+
+  if (checksum != buffer[7]) {
+    return;
+  }
+
+  if (buffer[2] == 0) {
+    return;
+  }
+
+  uint16_t angle =
+      (uint16_t)buffer[3] |
+      ((uint16_t)buffer[4] << 8);
+
+  uint16_t dist =
+      (uint16_t)buffer[5] |
+      ((uint16_t)buffer[6] << 8);
+
+  if (angle >= 360 || dist == 0xFFFF) {
+    return;
+  }
+
+  goalData.valid = true;
+  goalData.angle = angle;
+  goalData.dist = dist;
+  goalData.last_update = millis();
 }
 
 void ballsensor() {
@@ -590,7 +655,7 @@ void FC_Vector_Motion(
       control.heading_threshold) {
 
     omega =
-        e * control.P_factor;
+        e * 1.2;
   }
 
   RobotIKControl(
@@ -598,6 +663,8 @@ void FC_Vector_Motion(
       (int8_t)robot_vy,
       (int8_t)omega,0
   );
+  Serial.print("vx= ");Serial.print(robot_vx);
+  Serial.print(" vy= ");Serial.print(robot_vy);
 }
 void Degree_Motion(float moving_degree, int8_t speed){
   if(moving_degree > 360.0 || moving_degree < 0.0){

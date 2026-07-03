@@ -448,9 +448,7 @@ if(state == SCANNING){
  
   //Serial.println(aim_offset);
   //if(vy<40)vy=40;
-  float angleError = fabs(ballData.angle - 90);
-  float vxWeight = constrain(angleError / 25.0f, 0.4f, 1.0f);
-  vx = (int)round(vx* vxWeight);
+  
   
   //applyOmniEdgeBrake(vx,vy);
    /* if(maixPosData.valid && maixPosData.ball_found){
