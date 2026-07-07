@@ -82,12 +82,7 @@ struct BallData{uint16_t angle = 0xFFFF; uint16_t possession = 255;uint16_t dist
 struct MaixPosData {int16_t x = 65535;int16_t y = 65535;uint8_t status = 0;bool valid = false;bool ball_found = false;uint16_t ball_angle = 0xFFFF;uint8_t ball_dist = 0;} maixPosData;
 struct FrontCam {int16_t x = 65535;int16_t y = 65535;int8_t h = 0;int8_t w = 0;bool valid = false;int16_t offset = 0;} frontcam;
 
-struct GoalData {
-  bool valid = false;
-  uint16_t angle = 0xFFFF;
-  uint16_t dist = 0xFFFF;
-  uint32_t last_update = 0;
-} goalData;
+
 
 //float ballDegreelist[18]={0,22.5,45,67.5,87.5,92.5,112.5,135,157.5,180,202.5,225,240,267.5,272.5,300,315,337.5};
 float linesensorDegreelist[32] = {
@@ -127,7 +122,7 @@ void MotorStop();
 void RobotIKControl(int8_t vx, int8_t vy, float omega);
 //void Vector_Motion(float Vx, float Vy);
 void Vector_Motion(float Vx, float Vy, float rot_V, bool reset,bool useRamp);
-void FC_Vector_Motion(int WVx, int WVy, float target_heading,float heading_kp);
+void FC_Vector_Motion(int WVx, int WVy, float target_heading);
 void Degree_Motion(float moving_degree, int8_t speed);
 void kicker_control(bool);
 bool menuUpdate() ;
@@ -148,7 +143,7 @@ void Robot_Init(){
   Serial5.begin(921600);
   Serial6.begin(115200);
   Serial7.begin(115200);
-  Serial8.begin(921600);
+  Serial8.begin(115200);
   
   pinMode(DIR_1,OUTPUT);
   pinMode(DIR_2,OUTPUT);
@@ -292,87 +287,68 @@ void FrontCam() {
 }
 
 void readGoal() {
-  uint8_t buffer[14];
+  uint8_t buffer[9];
 
   goalData.valid = false;
-  maixPosData.valid = false;
 
+  // 清除上一次殘留資料
   while (Serial3.available()) {
     Serial3.read();
   }
 
+  // 要求相機回傳球門資料
   Serial3.write(0xDD);
 
   uint32_t start = millis();
 
-  while (Serial3.available() < 14) {
-    if (millis() - start > 30) {
+  while (Serial3.available() < 9) {
+    if (millis() - start > 20) {
       return;
     }
   }
 
-  if (Serial3.readBytes(buffer, 14) != 14) {
-    return;
-  }
+  Serial3.readBytes(buffer, 9);
 
-  // CC DD
-  // goalFound goalAngleL goalAngleH goalDistL goalDistH
-  // ballFound ballAngleL ballAngleH ballDistL ballDistH
-  // checksum EE
-
+  // CC DD found angleL angleH distL distH checksum EE
   if (buffer[0] != 0xCC ||
       buffer[1] != 0xDD ||
-      buffer[13] != 0xEE) {
+      buffer[8] != 0xEE) {
     return;
   }
 
-  uint8_t checksum = 0xDD;
+  uint8_t checksum = (
+      0xDD +
+      buffer[2] +
+      buffer[3] +
+      buffer[4] +
+      buffer[5] +
+      buffer[6]
+  ) & 0xFF;
 
-  for (uint8_t i = 2; i <= 11; i++) {
-    checksum += buffer[i];
-  }
-
-  if (checksum != buffer[12]) {
+  if (checksum != buffer[7]) {
     return;
   }
 
-  // 球門資料
-  uint16_t goal_angle =
+  if (buffer[2] == 0) {
+    return;
+  }
+
+  uint16_t angle =
       (uint16_t)buffer[3] |
       ((uint16_t)buffer[4] << 8);
 
-  uint16_t goal_dist =
+  uint16_t dist =
       (uint16_t)buffer[5] |
       ((uint16_t)buffer[6] << 8);
 
-  if (buffer[2] != 0 &&
-      goal_angle < 360 &&
-      goal_dist != 0xFFFF) {
-
-    goalData.valid = true;
-    goalData.angle = goal_angle;
-    goalData.dist = goal_dist;
-    goalData.last_update = millis();
+  if (angle >= 360 || dist == 0xFFFF) {
+    return;
   }
 
-  // 球資料
-  uint16_t ball_angle =
-      (uint16_t)buffer[8] |
-      ((uint16_t)buffer[9] << 8);
-
-  uint16_t ball_dist =
-      (uint16_t)buffer[10] |
-      ((uint16_t)buffer[11] << 8);
-
-  if (buffer[7] != 0 &&
-      ball_angle < 360 &&
-      ball_dist != 0xFFFF) {
-
-    maixPosData.valid = true;
-    maixPosData.ball_angle = ball_angle;
-    maixPosData.ball_dist = ball_dist;
-
-  }
+  goalData.valid = true;
+  goalData.angle = angle;
+  goalData.dist = dist;
+  goalData.last_update = millis();
 }
 
 void ballsensor() {
@@ -655,7 +631,7 @@ void FC_Vector_Motion(int WVx, int WVy, float target_heading) {
 void FC_Vector_Motion(
     int robot_vx,
     int robot_vy,
-    float target_heading,float heading_kp) {
+    float target_heading) {
 
   float omega = 0;
 
@@ -679,7 +655,7 @@ void FC_Vector_Motion(
       control.heading_threshold) {
 
     omega =
-        e * heading_kp;
+        e * 1.2;
   }
 
   RobotIKControl(
@@ -700,13 +676,13 @@ void Degree_Motion(float moving_degree, int8_t speed){
   Vector_Motion(Vx, Vy, 0,1,false);
 }
 
-
+/*
 void kicker_control(bool kick = false){
   static uint64_t charge_start = 0;
   static uint64_t last_charge_done = 0;
   static bool charging_state = false;
 
-  const uint32_t CHARGE_DURATION = 5000;   // ms needed to charge
+  const uint32_t CHARGE_DURATION = 3000;   // ms needed to charge
   const uint32_t CHARGE_TIMEOUT  = 8000;  // ms before recharging automatically
 
   uint64_t now = millis();
@@ -745,7 +721,7 @@ void kicker_control(bool kick = false){
     charging_state = false;
   }
 }
-
+*/
 /*
 void kicker_control(bool kick = false){
   static uint32_t charge_start_time = 0;
@@ -787,7 +763,6 @@ void kicker_control(bool kick = false){
     }
   }
 }*/
-/*
 void kicker_control(bool kick = false) {
   static uint8_t shots_left = 2;
   static uint32_t last_kick_time = 0;
@@ -849,7 +824,6 @@ void kicker_control(bool kick = false) {
     }
   }
 }
-  */
 /*
 void readBallCam(){
     
