@@ -237,42 +237,7 @@ void setup(){
 }*/
 
 void loop() {
-  int16_t vx = 0;
-  int16_t vy = 80;
-  int8_t aim_offset = 0;
-  updateUS();
-  Serial.print("front US: ");
-  Serial.println(us_dist_cm[US_FRONT]);  
-  Serial.print("Left US: ");
-  Serial.println(us_dist_cm[US_LEFT]);  
-  Serial.print("right US: ");
-  Serial.println(us_dist_cm[US_RIGHT]);  
-  Serial.print("back US: ");
-  Serial.println(us_dist_cm[US_BACK]);  
-
-  const float Y_SLOW = 10.0f;
-  const float Y_STOP = 50.0f;
-  float y = 110 - us_dist_cm[US_FRONT];
-  float scale_y = 1.0f;
-
-  if(vy>0 && y>0){
-    scale_y = constrain((Y_STOP - fabsf(y)) /
-        (Y_STOP - Y_SLOW),
-        0.0f,
-        1.0f
-    );
-   scale_y = scale_y * scale_y * scale_y;
-
-    vy = (int16_t)roundf(vy * scale_y);
-
-    if (scale_y < 0.15f) {
-      vy = 0;
-    }
-  }
-  vy = (int16_t)roundf(vy * scale_y);
-  if (y >= Y_STOP && vy > 0) vy = 0;
-  Serial.println(vy);
-  sendMovePacket(0, vy, 0);
+  kicker_control(1);
   /*
   readBNO085Yaw();
   Serial.println(gyroData.heading);*/

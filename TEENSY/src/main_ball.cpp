@@ -1,3 +1,4 @@
+/**/
 #include <Arduino.h>
 #include <Robot.h>
 #include <Servo.h>
@@ -24,9 +25,9 @@ Servo ESC;
 #define BACK_SLOW_Y -40.0f
 #define BACK_STOP_Y -65.0f
 #define SIDE_SLOW_EXP 4.0
-#define SIDE_SLOW_DIST 60.0f
-#define SIDE_STOP_DIST 30.0f
-#define SIDE_DANGER_DIST 20.0f
+#define SIDE_SLOW_DIST 80.0f
+#define SIDE_STOP_DIST 60.0f
+#define SIDE_DANGER_DIST 50.0f
 #define SIDE_PUSH_SPEED 25
 
 #define EAT_BALL_IR_PIN A16
@@ -170,14 +171,15 @@ void setupUS(){
   attachInterrupt(digitalPinToInterrupt(ECHO_B), echoBackISR, CHANGE);
   attachInterrupt(digitalPinToInterrupt(ECHO_L), echoLeftISR, CHANGE);
 }
-void applySideUS(int16_t &vx){
+
+void applySideUS(int16_t &vx,int16_t &vy){
   float left = us_dist_cm[US_LEFT];
   float right = us_dist_cm[US_RIGHT];
-  if(!isValidUS(left)){
+  float front = us_dist_cm[US_FRONT];
+  float back = us_dist_cm[US_BACK];
+  if(isValidUS(left)&&vx<0){
+    if(left <=10){
     return;
-  }
-  if(vx >= 0){
-    return; 
   }
 
   if(left <= SIDE_STOP_DIST){
@@ -192,13 +194,12 @@ void applySideUS(int16_t &vx){
     float scale = exp(-SIDE_SLOW_EXP * t);
     vx = (int16_t)round(vx * scale);
   }
-
+  }
   if(isValidUS(right)){
-    if(right <= SIDE_DANGER_DIST){
-      vx = 0;  // 往左
-      return;
-    }
 
+    if(right <=10){
+    return;
+  }
     if(vx > 0){
       if(right <= SIDE_STOP_DIST){
         vx = 0;
@@ -209,6 +210,36 @@ void applySideUS(int16_t &vx){
 
         float scale = exp(-SIDE_SLOW_EXP * t);
         vx = (int16_t)round(vx * scale);
+      }
+    }
+  }
+  if(isValidUS(front)){
+
+    if(vy > 0){
+      if(front <= SIDE_STOP_DIST){
+        vy = 0;
+      }
+      else if(front < SIDE_SLOW_DIST){
+        float t = (SIDE_SLOW_DIST - front) / (SIDE_SLOW_DIST - SIDE_STOP_DIST);
+        t = constrain(t, 0.0f, 1.0f);
+
+        float scale = exp(-SIDE_SLOW_EXP * t);
+        vx = (int16_t)round(vy * scale);
+      }
+    }
+  }
+  if(isValidUS(back)){
+
+    if(vy < 0){
+      if(back <= SIDE_STOP_DIST){
+        vy = 0;
+      }
+      else if(back < SIDE_SLOW_DIST){
+        float t = (SIDE_SLOW_DIST - back) / (SIDE_SLOW_DIST - SIDE_STOP_DIST);
+        t = constrain(t, 0.0f, 1.0f);
+
+        float scale = exp(-SIDE_SLOW_EXP * t);
+        vy = (int16_t)round(vy * scale);
       }
     }
   }
@@ -256,7 +287,7 @@ void applySideUSBrake(int16_t &vy){
     }
 
     if(back < 50){
-      float t = (50 - front) / (50 - 30);
+      float t = (50 - back) / (50 - 30);
       t = constrain(t, 0.0f, 1.0f);
 
       float scale = exp(-1 * t);
@@ -413,8 +444,7 @@ void applyBallVectorField(
 
   float tangent_y =
       ballField.orbit_side * radial_x;
-
-  const float target_distance = 65.0f;
+const float target_distance = 65.0f;
 
   float radial_speed =
       (distance - target_distance) *
@@ -422,7 +452,7 @@ void applyBallVectorField(
 
   radial_speed = constrain(
       radial_speed,
-      -25.0f,
+      -20.0f,
       70.0f
   );
 
@@ -466,7 +496,7 @@ void applyBallVectorField(
       radial_speed * radial_y +
       tangent_speed * tangent_y;
 
-  const float max_speed = 70.0f;
+  const float max_speed = 80.0f;
 
   float magnitude =
       sqrtf(
@@ -499,7 +529,7 @@ void applyIRChase(
           3,
           1,
           50,
-          70
+          90
       ),
       50.0f,
       90.0f
@@ -808,40 +838,16 @@ void setup() {
   ); 
   pinMode(COM1, INPUT);
   pinMode(COM2, INPUT);
-}
-
-
-int8_t calculateAimOffset() {
-  if (!filtered_pos_valid) {
-    return 0;
+  ESC.attach(A17, 1000, 2000);
+  ESC.writeMicroseconds(1000);
+  delay(1500);
+  for (int i = 0; i <= 20; i++) {
+    ESC.writeMicroseconds(1000);
+    delay(20);
   }
-
-  const float GOAL_Y = 121.5f;
-
-  // 左半場瞄準右門柱，右半場瞄準左門柱
-  float goal_x =
-      (filtered_pos_x < 0.0f)
-      ? 30.0f
-      : -30.0f;
-
-  float dx = goal_x - filtered_pos_x;
-  float dy = GOAL_Y - filtered_pos_y;
-
-  float absolute_heading =
-      atan2f(dy, dx) * 180.0f / PI;
-
-  // 扣掉正前方90°，轉成 -90～90 的偏移
-  float aim_offset =
-      absolute_heading - 90.0f;
-
-  aim_offset = constrain(
-      aim_offset,
-      -90.0f,
-      90.0f
-  );
-
-  return (int8_t)roundf(aim_offset);
 }
+
+
 void loop() {
   bool attack_enable =
       digitalRead(COM1) == HIGH &&
@@ -862,7 +868,7 @@ void loop() {
     resetBallField();
 
     kicker_control(false);
-    //ESC.writeMicroseconds(1000);
+    ESC.writeMicroseconds(1000);
 
     // 剛停止時立刻送 STOP，
     // 之後每 100ms 重送。
@@ -950,13 +956,16 @@ void loop() {
     return;
   }
 
-  readBNO085Yaw();
+  //readBNO085Yaw();
   ballsensor();
+  //updateUS();
   readMaix();
   updateKalmanPosition();
+  //readGoal();
+  if(maixPosData.valid){Serial.println("yes");}
   
-  Serial.print("x= ");Serial.print(filtered_pos_x);
-  Serial.print(" y= ");Serial.println(filtered_pos_y);
+  //Serial.print("x= ");Serial.print(filtered_pos_x);
+  //Serial.print(" y= ");Serial.println(filtered_pos_y);
  // FrontCam();if(frontcam.valid){Serial.println("front");};
   
   eat_ball =
@@ -975,44 +984,48 @@ static bool was_eating_ball = false;
 static bool kick_sent = false;
 
     if (eat_ball) {
-      resetBallField();
+  resetBallField();
 
-  // 剛吃到球，開始計時
   if (!was_eating_ball) {
     eat_ball_start = millis();
     kick_sent = false;
   }
 
   was_eating_ball = true;
-  int8_t x = filtered_pos_x;
   vx = 0;
-  vy = 50;
-  
-    if(x<-30){
-      aim_offset = -15;
-    }
-    else if(x > 30){
-      aim_offset = 15;
-    }
-    else{aim_offset = 0;}
 
-    if(!kick_sent && millis() - eat_ball_start > 50UL){
-      kicker_control(1);
-      kick_sent = true;
-    }else{
-      kicker_control(0);
-    }
-    if(filtered_pos_x>65&&filtered_pos_y>80||filtered_pos_x<-65&&filtered_pos_y>80){
-      vy=10;
-      aim_offset=0;
-      kicker_control(0);
-    }
-    } else {
+  if (filtered_pos_x < -30) {
+    aim_offset = -25;
+  } else if (filtered_pos_x > 30) {
+    aim_offset = 25;
+  } else {
+    aim_offset = 0;
+  }
+
+  bool kick_blocked =
+      fabs(filtered_pos_x) > 65 &&
+      filtered_pos_y > 80;
+
+  if (kick_blocked) {
+    vy = 10;
+    aim_offset = 0;
+    kicker_control(false);
+  } else if (!kick_sent &&
+             millis() - eat_ball_start > 50UL) {
+    kicker_control(true);
+    kick_sent = true;
+  } else {
+    kicker_control(false);
+  }
+
+}
+     else {
       was_eating_ball = false;
       eat_ball_start = 0;
       kick_sent = false;
 
       kicker_control(false);
+     
       /*
       if (ballData.valid) {
         if (maixPosData.valid &&
@@ -1042,13 +1055,13 @@ static bool kick_sent = false;
       }
     }*/
    if (ballData.valid) {
-  if (maixPosData.valid && maixPosData.ball_found) {
+    if (maixPosData.valid) {
 
     float diff = fabs(normalizeAngle180(
         ballData.angle - maixPosData.ball_angle
     ));
 
-    if (diff > 100.0f) {
+    if (diff > 360.0f) {
       resetBallField();
       applyIRChase(vx, vy);  // 角度差大，優先紅外線
     } else {
@@ -1067,18 +1080,36 @@ static bool kick_sent = false;
   }
 } else {
   resetBallField();
+  if (filtered_pos_valid) {
+    const float KP = 0.8f;
+    const float MAX_SPEED = 50.0f;
+    const float DEADBAND = 5.0f;
+
+    vx = (fabs(filtered_pos_x) > DEADBAND)
+        ? constrain(-filtered_pos_x * KP, -MAX_SPEED, MAX_SPEED)
+        : 0;
+
+    vy = (fabs(filtered_pos_y) > DEADBAND)
+        ? constrain(-filtered_pos_y * KP, -MAX_SPEED, MAX_SPEED)
+        : 0;
+  } else {
+    vx = 0;
+    vy = 0;
+  }
+
+  aim_offset = 0;
 }
-    }
+} 
   
 
   applyOmniEdgeBrake(vx, vy);
   //applySideUSBrake(vy);
-  //applySideUS(vx);
-    /*fif(filtered_pos_x <40&&filtered_pos_x>-40){aim_offset=0;}
+  //applySideUS(vx,vy);
+    /*if(filtered_pos_x <40&&filtered_pos_x>-40){aim_offset=0;}
    Serial.print(" offset ");Serial.println(aim_offset);*/
   sendMovePacket(
       vx,
       vy,
       aim_offset
   );
-}
+     }

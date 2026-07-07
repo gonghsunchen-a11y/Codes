@@ -501,9 +501,9 @@ void loop() {
 
     return;
   }
-
+  
   if (onLine) {
-    Serial.print("line");
+    //Serial.print("line");
     Vector_Motion(
         lineVx,
         lineVy,
@@ -511,10 +511,11 @@ void loop() {
         true
     );
   } 
+    
   else {
     bool reset_heading =
         (aim_offset == 0);
-
+    /*
     Serial.print("vx= ");
     Serial.print(vx);
 
@@ -523,11 +524,16 @@ void loop() {
 
     Serial.print(" aim= ");
     Serial.println(aim_offset);
-
+    */
+   float heading_kp =
+    (aim_offset != 0)
+    ? 1.5f    // 持球向左右轉頭
+    : 0.7f;   // 平常保持90度、回正
     FC_Vector_Motion(
         vx,
         vy,
-        90+aim_offset
+        90+aim_offset,
+        heading_kp
     );
   }
   /*

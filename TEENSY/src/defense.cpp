@@ -49,7 +49,7 @@ void loop() {
   int16_t vx = 0;
   int16_t vy = 0;
 
-  if (goalData.valid) {
+  if (goalData.valid||maixPosData.valid) {
     float speed;
 
     if (goalData.dist >= SLOW_DISTANCE) {
@@ -118,12 +118,10 @@ void loop() {
     Serial.print(goalData.angle);
     Serial.print(" dist=");
     Serial.print(goalData.dist);
-    Serial.print(" speed=");
-    Serial.print(speed);
-    Serial.print(" vx=");
-    Serial.print(vx);
-    Serial.print(" vy=");
-    Serial.println(vy);
+    Serial.print(" ban=");
+    Serial.print(maixPosData.ball_angle);
+    Serial.print(" bdist=");
+    Serial.print(maixPosData.ball_dist);
   }
   else {
     Serial.println("Goal not found");
