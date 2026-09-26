@@ -97,7 +97,8 @@ float linesensorDegreelist[32] = {
 struct RobotControl{
     float robot_heading = 90.0;        // Target heading
     float P_factor = 0.7;             // Proportional gain
-    float heading_threshold = 5.0;    // Deadband (degrees)
+    float D_factor = 0.03f;   
+    float heading_threshold = 2.0;    // Deadband (degrees)
     int8_t vx = 0;
     int8_t vy = 0;
     bool picked_up = false;
@@ -285,7 +286,7 @@ void FrontCam() {
     maixPosData.valid = false;  // checksum error
   }
 }
-
+/*
 void readGoal() {
   uint8_t buffer[9];
 
@@ -350,7 +351,7 @@ void readGoal() {
   goalData.dist = dist;
   goalData.last_update = millis();
 }
-
+*/
 void ballsensor() {
   uint8_t buffer[6];
   Serial6.write(0xDD);
@@ -573,6 +574,7 @@ void Vector_Motion(float Vx, float Vy){
   RobotIKControl(Vx, Vy, omega);
 }
 */
+/*
 void Vector_Motion(float Vx, float Vy, float target_offset ,bool reset){  
   float omega = 0.0;
   float current_gyro_heading = gyroData.heading;
@@ -600,6 +602,92 @@ void Vector_Motion(float Vx, float Vy, float target_offset ,bool reset){
 
   RobotIKControl(Vx, Vy, omega,0);
 
+}*/
+void Vector_Motion(float Vx, float Vy, float target_offset, bool reset)
+{
+    static float previous_error = 0.0f;
+    static uint32_t previous_time = 0;
+    static bool first_run = true;
+    static bool previous_reset = false;
+
+    float omega = 0.0f;
+
+    float current_gyro_heading = gyroData.heading;
+    float sensor_heading = 90.0f - current_gyro_heading;
+
+    float final_target;
+
+    if (reset) {
+        final_target = 90.0f;
+    }
+    else {
+        final_target = 90.0f + target_offset;
+    }
+
+    // 計算角度誤差
+    float error = final_target - sensor_heading;
+
+    // 將誤差限制在 -180～180 度
+    while (error > 180.0f) {
+        error -= 360.0f;
+    }
+
+    while (error < -180.0f) {
+        error += 360.0f;
+    }
+
+    uint32_t now = micros();
+    float derivative = 0.0f;
+
+    // 模式切換時清除 D 項，避免瞬間突跳
+    if (first_run || reset != previous_reset) {
+        previous_error = error;
+        previous_time = now;
+        previous_reset = reset;
+        first_run = false;
+    }
+    else {
+        float dt = (now - previous_time) * 0.000001f;
+
+        // 避免 dt 太小或迴圈停頓造成異常
+        if (dt >= 0.001f && dt <= 0.1f) {
+            float error_change = error - previous_error;
+
+            // 處理誤差跨越 ±180 度
+            if (error_change > 180.0f) {
+                error_change -= 360.0f;
+            }
+            else if (error_change < -180.0f) {
+                error_change += 360.0f;
+            }
+
+            derivative = error_change / dt;
+
+            previous_error = error;
+            previous_time = now;
+        }
+    }
+
+    if (fabs(error) > control.heading_threshold) {
+        float p_term = control.P_factor * error;
+        float d_term = control.D_factor * derivative;
+
+        omega = p_term + d_term;
+
+        if (!reset) {
+            // 瞄準時限制旋轉速度
+            omega = constrain(omega, -6.0f, 6.0f);
+        }
+    }
+    else {
+        omega = 0.0f;
+
+        // 進入死區後同步誤差，避免再次離開死區時 D 項突跳
+        previous_error = error;
+        previous_time = now;
+    }
+
+    RobotIKControl(Vx, Vy, omega, 0);
 }
 /*
 void FC_Vector_Motion(int WVx, int WVy, float target_heading) {

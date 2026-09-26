@@ -1,0 +1,61 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1400" height="900" viewBox="0 0 1400 900">
+  <defs>
+    <marker id="arrowRed" markerWidth="14" markerHeight="14" refX="12" refY="7" orient="auto"><path d="M2,2 L12,7 L2,12 Z" fill="#dc2626"/></marker>
+    <marker id="arrowBlue" markerWidth="14" markerHeight="14" refX="12" refY="7" orient="auto"><path d="M2,2 L12,7 L2,12 Z" fill="#2563eb"/></marker>
+    <marker id="arrowGreen" markerWidth="14" markerHeight="14" refX="12" refY="7" orient="auto"><path d="M2,2 L12,7 L2,12 Z" fill="#16a34a"/></marker>
+    <marker id="arrowPurple" markerWidth="14" markerHeight="14" refX="12" refY="7" orient="auto"><path d="M2,2 L12,7 L2,12 Z" fill="#7c3aed"/></marker>
+    <style>
+      .title{font:800 36px "Microsoft JhengHei","Noto Sans TC",Arial,sans-serif;fill:#111827}
+      .subtitle{font:600 23px "Microsoft JhengHei","Noto Sans TC",Arial,sans-serif;fill:#4b5563}
+      .label{font:700 24px "Microsoft JhengHei","Noto Sans TC",Arial,sans-serif;fill:#111827}
+      .small{font:600 20px "Microsoft JhengHei","Noto Sans TC",Arial,sans-serif;fill:#374151}
+      .tiny{font:500 17px "Microsoft JhengHei","Noto Sans TC",Arial,sans-serif;fill:#4b5563}
+      .formula{font:700 24px Consolas,"Microsoft JhengHei",monospace;fill:#111827}
+      .formulaSmall{font:700 20px Consolas,"Microsoft JhengHei",monospace;fill:#111827}
+    </style>
+  </defs>
+  <rect width="1400" height="900" fill="#f8fafc"/>
+  <text x="700" y="55" text-anchor="middle" class="title">4.3.5 雙球門定位：平均後反向</text>
+  <text x="700" y="88" text-anchor="middle" class="subtitle">兩座球門相對座標的平均值，是「球場中心相對機器人」的位置；反向後才是「機器人相對球場中心」的位置。</text>
+
+  <rect x="210" y="130" width="980" height="520" rx="24" fill="#dcfce7" stroke="#15803d" stroke-width="5"/>
+  <line x1="210" y1="390" x2="1190" y2="390" stroke="#15803d" stroke-width="3" stroke-dasharray="12 9"/>
+  <line x1="700" y1="130" x2="700" y2="650" stroke="#15803d" stroke-width="3" stroke-dasharray="12 9"/>
+  <circle cx="700" cy="390" r="10" fill="#111827"/>
+  <text x="720" y="382" class="label">球場中心 O</text>
+  <text x="720" y="410" class="formulaSmall">(0, 0)</text>
+
+  <rect x="560" y="145" width="280" height="38" rx="7" fill="#fde047" stroke="#a16207" stroke-width="4"/>
+  <text x="700" y="125" text-anchor="middle" class="label">黃色球門 Y</text>
+  <rect x="560" y="597" width="280" height="38" rx="7" fill="#60a5fa" stroke="#1d4ed8" stroke-width="4"/>
+  <text x="700" y="680" text-anchor="middle" class="label">藍色球門 B</text>
+
+  <circle cx="850" cy="470" r="26" fill="#ef4444" stroke="#991b1b" stroke-width="5"/>
+  <text x="885" y="465" class="label">機器人 R</text>
+  <text x="885" y="493" class="formulaSmall">(xᵣ, yᵣ)</text>
+
+  <line x1="850" y1="470" x2="714" y2="188" stroke="#dc2626" stroke-width="7" marker-end="url(#arrowRed)"/>
+  <text x="905" y="285" class="small" fill="#dc2626">黃門相對機器人</text>
+  <text x="905" y="314" class="formulaSmall" fill="#dc2626">(xᵧ, yᵧ)</text>
+  <line x1="850" y1="470" x2="716" y2="596" stroke="#2563eb" stroke-width="7" marker-end="url(#arrowBlue)"/>
+  <text x="905" y="575" class="small" fill="#2563eb">藍門相對機器人</text>
+  <text x="905" y="604" class="formulaSmall" fill="#2563eb">(xᵦ, yᵦ)</text>
+
+  <line x1="850" y1="470" x2="700" y2="390" stroke="#7c3aed" stroke-width="8" marker-end="url(#arrowPurple)"/>
+  <text x="418" y="465" class="small" fill="#7c3aed">兩球門相對座標取平均</text>
+  <text x="418" y="494" class="formulaSmall" fill="#7c3aed">((xᵧ+xᵦ)/2, (yᵧ+yᵦ)/2)</text>
+  <text x="418" y="523" class="tiny">這是「球場中心相對機器人」</text>
+  <line x1="700" y1="390" x2="850" y2="470" stroke="#16a34a" stroke-width="8" marker-end="url(#arrowGreen)"/>
+  <text x="737" y="535" class="small" fill="#16a34a">反向後得到機器人座標</text>
+  <text x="737" y="564" class="formulaSmall" fill="#16a34a">(xᵣ, yᵣ)</text>
+
+  <line x1="1115" y1="585" x2="1115" y2="500" stroke="#111827" stroke-width="4" marker-end="url(#arrowGreen)"/>
+  <line x1="1115" y1="585" x2="1200" y2="585" stroke="#111827" stroke-width="4" marker-end="url(#arrowGreen)"/>
+  <text x="1212" y="592" class="small">+X</text>
+  <text x="1100" y="483" class="small">+Y</text>
+
+  <rect x="110" y="705" width="1180" height="145" rx="22" fill="#ffffff" stroke="#cbd5e1" stroke-width="3"/>
+  <text x="145" y="750" class="formula">球場中心相對機器人 = ((xᵧ + xᵦ) / 2, (yᵧ + yᵦ) / 2)</text>
+  <text x="145" y="792" class="formula">機器人相對球場中心 = - 球場中心相對機器人</text>
+  <text x="145" y="834" class="formula">xᵣ = -(xᵧ + xᵦ) / 2，   yᵣ = -(yᵧ + yᵦ) / 2</text>
+</svg>

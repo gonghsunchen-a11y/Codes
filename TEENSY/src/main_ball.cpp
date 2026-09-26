@@ -646,12 +646,12 @@ void applyOmniEdgeBrake(
   }
 
   if (vy < 0) {
-    if (y >= BACK_STOP_Y) {
+    if (y <= BACK_STOP_Y) {
       vy = 0;
       return;
     }
 
-    if (y >= BACK_SLOW_Y) {
+    if (y <= BACK_SLOW_Y) {
       float t =
           (y - BACK_SLOW_Y) /
           (BACK_STOP_Y -
@@ -849,9 +849,9 @@ void setup() {
 
 
 void loop() {
-  bool attack_enable =
+  bool attack_enable =true;/*
       digitalRead(COM1) == HIGH &&
-      digitalRead(COM2) == HIGH;
+      digitalRead(COM2) == HIGH;*/
 
   // 雙 HIGH 才允許攻擊。
   // 雙 LOW 或一高一低都停止。
@@ -1065,14 +1065,97 @@ static bool kick_sent = false;
       resetBallField();
       applyIRChase(vx, vy);  // 角度差大，優先紅外線
     } else {
-      updateBallPrediction(maixPosData.ball_angle);
-
+      //updateBallPrediction(maixPosData.ball_angle);
+      /*
       if (ballField.capture_mode) {
         applyCaptureControl(vx, vy);
       } else {
         applyBallVectorField(vx, vy);
+      }*/
+
+      resetBallField();
+
+
+      float ball_angle = ballData.angle;
+      float ball_dist  = ballData.dist;
+
+      ball_angle = fmodf(ball_angle, 360.0f);
+      if (ball_angle < 0.0f) {
+        ball_angle += 360.0f;
+      }
+
+      float moving_degree = ball_angle;
+      float offset = 0.0f;
+
+      float ballspeed = constrain(
+          map(ball_dist, 25, 55, 40, 70),
+          40L,
+          70L
+      );
+
+      // 遠距離：直接朝球移動
+      if (ball_dist < 65.0f) {
+        float angleError = fabsf(ball_angle - 90.0f);
+
+        float angleFactor = 1.0f - constrain(
+            angleError / 90.0f,
+            0.0f,
+            1.0f
+        );
+
+      // 球偏離正前方時降低速度
+      ballspeed *= 0.6f + 0.4f * angleFactor;
+
+      if (ball_angle >= 75.0f && ball_angle <= 105.0f) {
+        // 球在正前方：直接接近
+        ballspeed = 50.0f;
+      } else {
+        // 依球的位置選擇繞球方向
+        float side =
+            (ball_angle > 105.0f && ball_angle < 270.0f)
+            ? 1.0f
+            : -1.0f;
+
+        // 距離不超過 55 時，偏角固定為 90 度
+        // 分開處理可避免計算過大的指數值
+        float offsetRatio =
+            (ball_dist <= 55.0f)
+            ? 1.0f
+            : expf(-1.5f * (ball_dist - 55.0f));
+
+        offset = 90.0f * offsetRatio;
+        moving_degree = ball_angle + side * offset;
       }
     }
+
+    moving_degree = fmodf(
+        moving_degree + 360.0f,
+        360.0f
+    );
+
+    // 換算移動指令
+    float moving_radian = moving_degree * DtoR_const;
+
+    ballData.Vx = (int)roundf(
+        ballspeed * cosf(moving_radian)
+    );
+
+    ballData.Vy = (int)roundf(
+        ballspeed * sinf(moving_radian)
+    );
+
+    // 球已接近正前方：向前推進
+    if (ball_dist <= 37.0f &&
+        ball_angle >= 80.0f &&
+        ball_angle <= 100.0f) {
+      ballData.Vx = 0;
+      ballData.Vy = 80;
+    }
+
+    // 寫回目前控制流程使用的移動變數
+    vx = ballData.Vx;
+    vy = ballData.Vy;
+  }
 
   } else {
     resetBallField();

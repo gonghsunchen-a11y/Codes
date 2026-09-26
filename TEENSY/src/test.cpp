@@ -209,11 +209,12 @@ void sendMovePacket(
 }
 */
 
+
 void setup(){
     Robot_Init();
     Serial2.begin(115200);
     pinMode(BALL,INPUT);
-     setupUS();
+     //setupUS();
     /*pinMode(DIR_1,OUTPUT);
     pinMode(DIR_2,OUTPUT);
     pinMode(DIR_3,OUTPUT);
@@ -235,14 +236,28 @@ void setup(){
   analogWrite(pwmPin3, 0);
   analogWrite(pwmPin4, 0);
 }*/
-
+unsigned long lastPlotTime = 0;
+const unsigned long plotInterval = 20;  // 每 20 ms 輸出一次
 void loop() {
-  kicker_control(1);
-  /*
-  readBNO085Yaw();
-  Serial.println(gyroData.heading);*/
-  /*
+  //kicker_control(1);
 
+    readBNO085Yaw();
+    Vector_Motion(0, 0, 0, 1);
+
+    unsigned long now = millis();
+
+    if (now - lastPlotTime >= plotInterval) {
+        lastPlotTime = now;
+        Serial.print("Max:");
+        Serial.print(90);
+        Serial.print(",Current:");
+        Serial.print(gyroData.heading);
+        Serial.print(",Target:");
+        Serial.println(control.robot_heading-90);
+        Serial.print(",Min:");
+        Serial.println(-90);
+    }
+/*
   readMaix();
   
     Serial.print("X=");

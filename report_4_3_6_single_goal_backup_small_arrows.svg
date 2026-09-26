@@ -1,0 +1,68 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1600" height="900" viewBox="0 0 1600 900">
+  <defs>
+    <marker id="arrRed" markerWidth="10" markerHeight="10" refX="9" refY="5" orient="auto"><path d="M2,2 L9,5 L2,8 Z" fill="#dc2626"/></marker>
+    <marker id="arrBlue" markerWidth="10" markerHeight="10" refX="9" refY="5" orient="auto"><path d="M2,2 L9,5 L2,8 Z" fill="#2563eb"/></marker>
+    <marker id="arrGreen" markerWidth="10" markerHeight="10" refX="9" refY="5" orient="auto"><path d="M2,2 L9,5 L2,8 Z" fill="#16a34a"/></marker>
+    <style>
+      .title{font:800 38px "Microsoft JhengHei","Noto Sans TC",Arial,sans-serif;fill:#111827}
+      .sub{font:600 22px "Microsoft JhengHei","Noto Sans TC",Arial,sans-serif;fill:#4b5563}
+      .h{font:800 27px "Microsoft JhengHei","Noto Sans TC",Arial,sans-serif;fill:#111827}
+      .t{font:600 22px "Microsoft JhengHei","Noto Sans TC",Arial,sans-serif;fill:#111827}
+      .s{font:500 19px "Microsoft JhengHei","Noto Sans TC",Arial,sans-serif;fill:#4b5563}
+      .f{font:700 24px Consolas,"Microsoft JhengHei",monospace;fill:#111827}
+      .fs{font:700 21px Consolas,"Microsoft JhengHei",monospace;fill:#111827}
+    </style>
+  </defs>
+  <rect width="1600" height="900" fill="#f8fafc"/>
+  <text x="800" y="55" text-anchor="middle" class="title">4.3.6 單一球門備援定位</text>
+  <text x="800" y="90" text-anchor="middle" class="sub">只看到一座球門時，用「球門固定場上座標」減掉「球門相對機器人座標」，反推出機器人位置。</text>
+
+  <rect x="70" y="135" width="900" height="640" rx="24" fill="#dcfce7" stroke="#15803d" stroke-width="5"/>
+  <line x1="70" y1="455" x2="970" y2="455" stroke="#15803d" stroke-width="3" stroke-dasharray="14 10"/>
+  <line x1="520" y1="135" x2="520" y2="775" stroke="#15803d" stroke-width="3" stroke-dasharray="14 10"/>
+  <rect x="380" y="158" width="280" height="42" rx="8" fill="#fde047" stroke="#a16207" stroke-width="4"/>
+  <text x="520" y="126" text-anchor="middle" class="t">黃色球門固定座標 Y = (0, L·S)</text>
+  <rect x="380" y="710" width="280" height="42" rx="8" fill="#60a5fa" stroke="#1d4ed8" stroke-width="4"/>
+  <text x="520" y="800" text-anchor="middle" class="t">藍色球門固定座標 B = (0, -L·S)</text>
+  <circle cx="520" cy="455" r="11" fill="#111827"/>
+  <text x="545" y="448" class="t">球場中心 O</text>
+  <text x="545" y="475" class="fs">(0, 0)</text>
+  <circle cx="690" cy="545" r="29" fill="#ef4444" stroke="#991b1b" stroke-width="5"/>
+  <text x="725" y="540" class="t">機器人 R</text>
+  <text x="725" y="568" class="fs">(xᵣ, yᵣ)</text>
+
+  <line x1="690" y1="545" x2="535" y2="205" stroke="#dc2626" stroke-width="4.5" marker-end="url(#arrRed)"/>
+  <line x1="690" y1="545" x2="535" y2="708" stroke="#2563eb" stroke-width="4.5" marker-end="url(#arrBlue)"/>
+  <line x1="520" y1="455" x2="690" y2="545" stroke="#16a34a" stroke-width="5" marker-end="url(#arrGreen)"/>
+
+  <rect x="105" y="250" width="330" height="90" rx="14" fill="#fff1f2" stroke="#dc2626" stroke-width="2"/>
+  <text x="125" y="282" class="t" fill="#dc2626">若只看到黃門</text>
+  <text x="125" y="315" class="fs" fill="#dc2626">相對座標：(xᵧ, yᵧ)</text>
+  <rect x="105" y="620" width="330" height="90" rx="14" fill="#eff6ff" stroke="#2563eb" stroke-width="2"/>
+  <text x="125" y="652" class="t" fill="#2563eb">若只看到藍門</text>
+  <text x="125" y="685" class="fs" fill="#2563eb">相對座標：(xᵦ, yᵦ)</text>
+  <rect x="600" y="625" width="330" height="85" rx="14" fill="#f0fdf4" stroke="#16a34a" stroke-width="2"/>
+  <text x="620" y="657" class="t" fill="#16a34a">要求的結果</text>
+  <text x="620" y="690" class="fs" fill="#16a34a">機器人場上座標</text>
+
+  <line x1="860" y1="735" x2="860" y2="650" stroke="#111827" stroke-width="3" marker-end="url(#arrGreen)"/>
+  <line x1="860" y1="735" x2="945" y2="735" stroke="#111827" stroke-width="3" marker-end="url(#arrGreen)"/>
+  <text x="952" y="742" class="s">+X</text>
+  <text x="845" y="635" class="s">+Y</text>
+
+  <rect x="1020" y="135" width="510" height="640" rx="24" fill="#ffffff" stroke="#cbd5e1" stroke-width="3"/>
+  <text x="1060" y="190" class="h">基本關係式</text>
+  <text x="1060" y="245" class="fs">球門場上座標</text>
+  <text x="1100" y="283" class="fs">= 機器人場上座標</text>
+  <text x="1100" y="321" class="fs">+ 球門相對機器人座標</text>
+  <text x="1060" y="385" class="t">移項後：</text>
+  <text x="1080" y="425" class="fs">機器人場上座標</text>
+  <text x="1100" y="463" class="fs">= 球門場上座標</text>
+  <text x="1100" y="501" class="fs">- 球門相對機器人座標</text>
+  <line x1="1060" y1="540" x2="1490" y2="540" stroke="#cbd5e1" stroke-width="2"/>
+  <text x="1060" y="590" class="h">套用到單一球門</text>
+  <text x="1080" y="638" class="f">黃門：xᵣ = -xᵧ</text>
+  <text x="1080" y="676" class="f">　　　yᵣ = L·S - yᵧ</text>
+  <text x="1080" y="725" class="f">藍門：xᵣ = -xᵦ</text>
+  <text x="1080" y="763" class="f">　　　yᵣ = -L·S - yᵦ</text>
+</svg>
