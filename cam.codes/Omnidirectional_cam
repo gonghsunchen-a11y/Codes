@@ -1,0 +1,416 @@
+from maix import camera, image, app, time, uart
+import math
+
+DEBUG_VIEW = False
+GOAL_UPDATE_EVERY = 10
+last_pos_print = time.ticks_ms()
+
+if DEBUG_VIEW:
+    from maix import display
+    disp = display.Display()
+
+cam = camera.Camera(320, 240, image.Format.FMT_RGB888)
+cam.set_awb(1)
+
+ser = uart.UART("/dev/ttyS0", 115200)
+
+YELLOW_LAB = [33, 79, -28, 15, 35, 82]
+BLUE_LAB = [30, 70, -25, 35, -75, -20]
+BALL_LAB = [19, 70, 10, 53, 18, 76]
+
+
+
+W, H = 320, 240
+CENTER_X, CENTER_Y = 162, 123
+R_MIN, R_MAX = 37, 105
+
+BALL_R = 90
+BALL_W_MIN = 4
+BALL_W_MAX = 20
+BALL_H_MIN = 4
+BALL_H_MAX = 20
+BALL_PIXELS_MIN = 8
+BALL_PIXELS_MAX = 400
+
+A, B, C = 0.00183098896, 1800.121314, -19.93325639
+
+hists = {
+    "yellow": [],
+    "blue": []
+}
+HIST_N = 5
+
+YG = 100
+ATTACK_Side = 1
+
+frame_count = 0
+robot_x, robot_y = 0.0, 0.0
+status = 0
+best_y = None
+best_b = None
+
+last_ball_print = time.ticks_ms()
+last_pos_print = time.ticks_ms()
+
+def pack_int8(v):
+    v = int(round(v))
+
+    if v < -128:
+        v = -128
+    if v > 127:
+        v = 127
+
+    if v < 0:
+        v += 256
+
+    return v & 0xFF
+
+def pack_int16(v):
+    v = int(v)
+    if v < 0:
+        v += 65536
+    return (v & 0xFF, (v >> 8) & 0xFF)
+
+
+def point_radius(cx, cy):
+    return math.hypot(cx - CENTER_X, cy - CENTER_Y)
+
+
+def blob_radius(b):
+    return point_radius(b.cx(), b.cy())
+
+
+def angle_diff(a, b):
+    return abs((a - b + math.pi) % (2 * math.pi) - math.pi)
+
+
+def merge_goal_parts(blobs, color_code):
+    parts = []
+
+    for b in blobs:
+        if b.code() != color_code:
+            continue
+
+        r = blob_radius(b)
+        if not (R_MIN <= r <= R_MAX):
+            continue
+
+        if b.pixels() < 8:
+            continue
+
+        parts.append({
+            "blob": b,
+            "r": r,
+            "ang": math.atan2(b.cy() - CENTER_Y, b.cx() - CENTER_X),
+        })
+
+    if not parts:
+        return None
+
+    main = max(parts, key=lambda p: p["blob"].pixels())
+    main_r = main["r"]
+    main_ang = main["ang"]
+
+    group = []
+    for p in parts:
+        r_diff = abs(p["r"] - main_r)
+        a_diff = angle_diff(p["ang"], main_ang)
+
+        if r_diff < 18 and a_diff < math.radians(45):
+            group.append(p["blob"])
+
+    if not group:
+        group = [main["blob"]]
+
+    x1 = min(b.x() for b in group)
+    y1 = min(b.y() for b in group)
+    x2 = max(b.x() + b.w() for b in group)
+    y2 = max(b.y() + b.h() for b in group)
+
+    total_pixels = sum(b.pixels() for b in group)
+
+    cx = (x1 + x2) // 2
+    cy = sum(b.cy() * b.pixels() for b in group) // total_pixels
+
+    return {
+        "x": x1,
+        "y": y1,
+        "w": x2 - x1,
+        "h": y2 - y1,
+        "cx": int(cx),
+        "cy": int(cy),
+        "pixels": total_pixels,
+        "count": len(group)
+    }
+
+'''
+def merge_goal_parts(blobs, color_code):
+    group = []
+
+    for b in blobs:
+        if b.code() != color_code:
+            continue
+
+        r = blob_radius(b)
+        if not (R_MIN <= r <= R_MAX):
+            continue
+
+        if b.pixels() < 8:
+            continue
+
+        group.append(b)
+
+    if not group:
+        return None
+
+    x1 = min(b.x() for b in group)
+    y1 = min(b.y() for b in group)
+    x2 = max(b.x() + b.w() for b in group)
+    y2 = max(b.y() + b.h() for b in group)
+
+    total_pixels = sum(b.pixels() for b in group)
+
+    cx = (x1 + x2) // 2
+    cy = sum(b.cy() * b.pixels() for b in group) // total_pixels
+
+    return {
+        "x": x1,
+        "y": y1,
+        "w": x2 - x1,
+        "h": y2 - y1,
+        "cx": int(cx),
+        "cy": int(cy),
+        "pixels": total_pixels,
+        "count": len(group)
+    }
+'''
+def calc_goal_position(goal, color_name):
+    r = point_radius(goal["cx"], goal["cy"])
+
+    hists[color_name].append(r)
+    if len(hists[color_name]) > HIST_N:
+        hists[color_name].pop(0)
+
+    r_avg = sum(hists[color_name]) / len(hists[color_name])
+
+    dist = max((A * (r_avg ** 2)) + (B / math.sqrt(goal["pixels"])) + C, 10.0)
+
+    ang_rad = math.atan2(goal["cy"] - CENTER_Y, goal["cx"] - CENTER_X)
+    ang_deg = math.degrees(ang_rad) % 360
+
+    x_rel = dist * math.cos(ang_rad)
+    y_rel = dist * math.sin(ang_rad)
+
+    return x_rel, y_rel, dist, ang_deg
+
+
+def find_ball_in_circle(img):
+    ball_blobs = img.find_blobs(
+        [BALL_LAB],
+        roi=(CENTER_X - BALL_R, CENTER_Y - BALL_R, BALL_R * 2, BALL_R * 2),
+        merge=True,
+        area_threshold=BALL_PIXELS_MIN,
+        pixels_threshold=BALL_PIXELS_MIN,
+    )
+
+    best_ball = None
+
+    if ball_blobs:
+        for b in ball_blobs:
+            r = point_radius(b.cx(), b.cy())
+
+            if r < R_MIN or r > BALL_R:
+                continue
+
+            if b.w() < BALL_W_MIN or b.w() > BALL_W_MAX:
+                continue
+
+            if b.h() < BALL_H_MIN or b.h() > BALL_H_MAX:
+                continue
+
+            if b.pixels() < BALL_PIXELS_MIN or b.pixels() > BALL_PIXELS_MAX:
+                continue
+
+            if best_ball is None or b.pixels() > best_ball.pixels():
+                best_ball = b
+
+    if not best_ball:
+        return None
+
+    dx = best_ball.cx() - CENTER_X
+    dy = best_ball.cy() - CENTER_Y
+
+    ang_rad = math.atan2(dy, dx)
+    ang_deg = int(math.degrees(ang_rad) % 360)
+    dist = int(min(point_radius(best_ball.cx(), best_ball.cy()), 255))
+
+    return {
+        "blob": best_ball,
+        "angle": ang_deg,
+        "dist": dist
+    }
+
+
+while not app.need_exit():
+    img = cam.read()
+    if img is None:
+        continue
+
+    img = img.flip(image.FlipDir.X)
+    img = img.flip(image.FlipDir.Y)
+
+    frame_count += 1
+
+    ball = find_ball_in_circle(img)
+    ball_found = 0
+    ball_angle = 0xFFFF
+    ball_dist = 0
+
+    if ball:
+        ball_found = 1
+        ball_angle = ball["angle"]
+        ball_dist = ball["dist"]
+
+    if frame_count % GOAL_UPDATE_EVERY == 0:
+        blobs = img.find_blobs(
+            [YELLOW_LAB, BLUE_LAB],
+            roi=(CENTER_X - R_MAX, CENTER_Y - R_MAX, R_MAX * 2, R_MAX * 2),
+            merge=False,
+            area_threshold=8,
+            pixels_threshold=8
+        )
+
+        best_y = merge_goal_parts(blobs, 1)
+        best_b = merge_goal_parts(blobs, 2)
+
+        pos_y = None
+        pos_b = None
+
+        if best_y:
+            x_rel, y_rel, dist_y, ang_deg_y = calc_goal_position(best_y, "yellow")
+            pos_y = (x_rel, y_rel)
+        else:
+            hists["yellow"].clear()
+
+        if best_b:
+            x_rel, y_rel, dist_b, ang_deg_b = calc_goal_position(best_b, "blue")
+            pos_b = (x_rel, y_rel)
+        else:
+            hists["blue"].clear()
+
+        robot_x, robot_y = 0.0, 0.0
+        status = 0
+
+        if pos_y and pos_b:
+            x_y, y_y = pos_y
+            x_b, y_b = pos_b
+
+            robot_x = -(x_y + x_b) * 0.5
+            robot_y = -(y_y + y_b) * 0.5
+            status = 2
+
+        elif pos_y and not pos_b:
+            x_y, y_y = pos_y
+
+            x_b_virt = x_y
+            y_b_virt = -y_y + (2 * YG * ATTACK_Side)
+
+            robot_x = -(x_y + x_b_virt) * 0.5
+            robot_y = (y_b_virt - y_y) * 0.5
+            status = 1
+
+        elif not pos_y and pos_b:
+            x_b, y_b = pos_b
+
+            x_y_virt = x_b
+            y_y_virt = -y_b - (2 * YG * ATTACK_Side)
+
+            robot_x = -(x_y_virt + x_b) * 0.5
+            robot_y = (y_y_virt - y_b) * 0.5
+            status = 1
+    x8 = pack_int8(robot_x)
+    y8 = pack_int8(robot_y)
+    ba0, ba1 = pack_int16(ball_angle)
+
+    checksum = (
+        x8+
+        y8+
+        status +
+        ball_found +
+        ba0 + ba1 +
+        ball_dist
+    ) & 0xFF
+
+    packet = bytes([
+        0xCC,
+        x8,
+        y8,
+        status,
+        ball_found,
+        ba0, ba1,
+        ball_dist,
+        checksum,
+        0xEE
+    ])
+
+    if ser.available():
+        data = ser.read(1)
+        print("read:")
+        print(data)
+        if data:
+            for v in data:
+                if v == 0xDD:
+                    #pass
+                    ser.write(packet)
+                    break
+
+
+    if DEBUG_VIEW:
+        img.draw_circle(CENTER_X, CENTER_Y, R_MIN, image.Color.from_rgb(0, 255, 0), 1)
+        img.draw_circle(CENTER_X, CENTER_Y, R_MAX, image.Color.from_rgb(255, 0, 0), 1)
+        img.draw_cross(CENTER_X, CENTER_Y, image.Color.from_rgb(255, 255, 255), 8, 1)
+        img.draw_circle(CENTER_X, CENTER_Y, BALL_R, image.Color.from_rgb(255, 128, 0), 1)
+
+        if ball:
+            b = ball["blob"]
+            img.draw_rect(b.x(), b.y(), b.w(), b.h(), image.Color.from_rgb(255, 128, 0), 2)
+            img.draw_cross(b.cx(), b.cy(), image.Color.from_rgb(255, 255, 255), 2)
+
+        if best_y:
+            img.draw_rect(best_y["x"], best_y["y"], best_y["w"], best_y["h"],
+                          image.Color.from_rgb(255, 255, 0), 2)
+            img.draw_cross(best_y["cx"], best_y["cy"],
+                           image.Color.from_rgb(255, 255, 0), 8, 2)
+
+        if best_b:
+            img.draw_rect(best_b["x"], best_b["y"], best_b["w"], best_b["h"],
+                          image.Color.from_rgb(0, 128, 255), 2)
+            img.draw_cross(best_b["cx"], best_b["cy"],
+                           image.Color.from_rgb(0, 128, 255), 8, 2)
+
+        if best_y and best_b:
+            img.draw_line(best_y["cx"], best_y["cy"],
+                          best_b["cx"], best_b["cy"],
+                          image.Color.from_rgb(255, 255, 255), 2)
+
+        now = time.ticks_ms()
+        if now - last_pos_print >= 200:
+            last_pos_print = now
+
+            print(
+                "robot_x=", robot_x,
+                "robot_y=", robot_y,
+                "status=", status,
+                "ball_angle=", ball_angle,
+                "ball_dist=", ball_dist
+            )
+
+            if best_y:
+                print("yellow cx=", best_y["cx"], "cy=", best_y["cy"], "count=", best_y["count"])
+
+            if best_b:
+                print("blue cx=", best_b["cx"], "cy=", best_b["cy"], "count=", best_b["count"])
+
+        disp.show(img)
+    #fps = time.fps() 
+    #print(f"time: {1000/fps:.02f}ms, fps: {fps:.02f}") # print FPS in console

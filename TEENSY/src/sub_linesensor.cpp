@@ -19,14 +19,12 @@ struct LineData{uint32_t state = 0xFFFFFFFF;} lineData;
 
 int readMux(int ch, int sigPin);
 void line_calibrate();
-void linesensor_update();
 void moveBackInBounds();
-
-
 
 uint16_t max_ls[LS_count];
 uint16_t avg_ls[LS_count];
 uint16_t min_ls[LS_count];
+
 //SPEED
 float lineVx = 0;
 float lineVy = 0;
@@ -45,7 +43,7 @@ int readMux(int ch, int sigPin) {
   digitalWrite(s1, (ch >> 1) & 1);
   digitalWrite(s2, (ch >> 2) & 1);
   digitalWrite(s3, (ch >> 3) & 1);
-  delayMicroseconds(10);
+  delayMicroseconds(20);
   if(sigPin == 1)return analogRead(M1);
   if(sigPin == 2)return analogRead(M2);
 }
@@ -55,9 +53,12 @@ void line_calibrate(){
   for(int i=0; i<LS_count; i++){
     max_ls[i] = 0;
     min_ls[i] = 4095;
+    avg_ls[i] = 0;
   }
   while(1){
-
+    for(uint8_t i = 0; i < LS_count; i++){
+            avg_ls[i] = (max_ls[i] + min_ls[i])/2;
+        }
     if(Serial8.available()){
       if(Serial8.read() == 'E'){
         for(uint8_t i = 0; i < LS_count; i++){
@@ -69,22 +70,21 @@ void line_calibrate(){
         break;
       } 
     }
-
+    
     for(uint8_t i = 0; i < LS_count; i++){
     uint16_t reading = readMux(i % 16, (i < 16) ? 1 : 2);
 
     if(reading > max_ls[i]) max_ls[i] = reading;
     if(reading < min_ls[i]) min_ls[i] = reading;
     } 
-  }
-
+  } 
   for(uint8_t i = 0; i < LS_count; i++){
-      avg_ls[i] = (max_ls[i] + min_ls[i]) / 2;
-  }
+            avg_ls[i] = (max_ls[i] + min_ls[i])/2;
+        }
   EEPROM.put(0, avg_ls);
   Serial8.print('D');
 }
-
+/*
 //更新
 void linesensor_update(){
   lineData.state = 0xFFFFFFFF;
@@ -99,8 +99,8 @@ void linesensor_update(){
       //Serial.println();
     }
   }
-
-  /*for (int i = LS_count - 1; i >= 0; i--) {
+  
+  for (int i = LS_count - 1; i >= 0; i--) {
     uint8_t bit = (lineData.state >> i) & 1;
     Serial.print(bit);
 
@@ -109,8 +109,55 @@ void linesensor_update(){
     }
   }
   Serial.println(" ");
-  delay(50);*/
+  //delay(50);
+  
+}*/
+void fast_update_line_sensor(){
+  static uint32_t prevRaw = 0xFFFFFFFF;
+  uint32_t rawState       = 0xFFFFFFFF;
 
+  for(uint8_t ch = 0; ch < 16; ch++){
+    // 1. 極速切換引腳
+    digitalWriteFast(s0, (ch >> 0) & 1);
+    digitalWriteFast(s1, (ch >> 1) & 1);
+    digitalWriteFast(s2, (ch >> 2) & 1);
+    digitalWriteFast(s3, (ch >> 3) & 1);
+    
+    // 💡 修正 1：給多工器硬體開關 1.5 微秒的切換與穩定時間（這不能省！）
+    
+    //delayMicroseconds(50); 
+
+    analogRead(M1);
+    uint16_t r1 = analogRead(M1);
+
+    analogRead(M2);
+    uint16_t r2 =  analogRead(M2); // 這一次讀到的才是對的
+    // 2. 判斷邏輯
+    if(r1 < avg_ls[ch]) {
+      rawState &= ~(1UL << ch);
+    }
+
+    if(r2 < avg_ls[ch + 16]) {
+      rawState &= ~(1UL << (ch + 16));
+    }
+    
+  }
+
+  // 💡 修正 3：軟體濾波（如果你發現還是有跳動雜訊，再開啟這兩行）
+  // 如果要防跳動，用「且（&）」會比「或（|）」在線條偵測上更安全
+  lineData.state = rawState; 
+  
+   for (int i = LS_count - 1; i >= 0; i--) {
+    uint8_t bit = (lineData.state >> i) & 1;
+    Serial.print(bit);
+
+    if (i % 4 == 0 && i != 0) {
+      Serial.print(" "); 
+    }
+  }
+  Serial.println(" ");
+  
+  // prevRaw        = rawState;
 }
 void moveBackInBounds(){
   //-----LINE SENSOR-----
@@ -133,7 +180,7 @@ void moveBackInBounds(){
 
   // B : 反彈
 
-  if(linedetected && count > 1){
+  if(linedetected && count >= 1){
     float lineDegree = atan2(sumY, sumX) * RtoD_const;
     if (lineDegree < 0){lineDegree += 360;} 
     
@@ -144,8 +191,8 @@ void moveBackInBounds(){
       first_detect = true;
       speed_timer = millis();
       
-      Serial.println("LINE DETECTED !!!");
-      Serial.print("initlineDegree =");Serial.println(init_lineDegree);
+      //Serial.println("LINE DETECTED !!!");
+      //Serial.print("initlineDegree =");Serial.println(init_lineDegree);
     }
 
     diff = fabs(lineDegree - init_lineDegree);
@@ -164,10 +211,10 @@ void moveBackInBounds(){
       overhalf = false;
       finalDegree = fmod(lineDegree + 180.0f, 360.0f);
     }
-    Serial.print("finalDegree =");Serial.println(finalDegree);
+    //Serial.print("finalDegree =");Serial.println(finalDegree);
         
-    lineVx = 40.0f *cos(finalDegree * DtoR_const);
-    lineVy = 40.0f *sin(finalDegree * DtoR_const);   
+    lineVx = 50.0f *cos(finalDegree * DtoR_const);
+    lineVy = 50.0f *sin(finalDegree * DtoR_const);   
   }
   else{
     first_detect = false;
@@ -175,8 +222,8 @@ void moveBackInBounds(){
     lineVy = 0;
   }
 
-  Serial.print("lineVx =");Serial.println(lineVx);
-  Serial.print("lineVy =");Serial.println(lineVy);
+  //Serial.print("lineVx =");Serial.println(lineVx);
+  //Serial.print("lineVy =");Serial.println(lineVy);
   
 
 }
@@ -190,8 +237,8 @@ void setup() {
   pinMode(s2, OUTPUT);
   pinMode(s3, OUTPUT);
 
-  pinMode(M1, INPUT_PULLDOWN);
-  pinMode(M2, INPUT_PULLDOWN);
+  pinMode(M1, INPUT);
+  pinMode(M2, INPUT);
   
   EEPROM.begin();
   EEPROM.get(0, avg_ls);
@@ -209,7 +256,7 @@ void loop(){
     }
   }
   readBNO085Yaw();
-  linesensor_update();
+  fast_update_line_sensor();
   moveBackInBounds();
-  Vector_Motion(25, 0,0,1,0);
+  Vector_Motion(lineVx,lineVy,0,1,0);
 }

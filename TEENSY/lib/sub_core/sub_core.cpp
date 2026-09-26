@@ -1,9 +1,18 @@
 #include "sub_core.h"
 
+// 1. Define the actual memory for these variables here
 LineData lineData;           
 MainCoreCommand mainCommand; // Added for MainCoreCommand usage  
 GyroData gyroData;       
-RobotControl control;        // Added to match Vector_Motion usage
+RobotStatus control;        // Added to match Vector_Motion usage
+MainCoreCommand mainCommand;
+GoalData goalData;
+USSensor usData;
+
+// --- Sensor Data ---
+BallData ballData;
+Position RobotPos;
+
 uint16_t avg_ls[32]; 
 uint16_t max_ls[32];
 uint16_t min_ls[32];    
@@ -22,7 +31,7 @@ const float linesensorDegreelist[32] = {
 
 
 void sub_core_init() {
-Serial8.begin(115200); // For communication with MainCore
+    Serial8.begin(921600); // For communication with MainCore
     Serial2.begin(115200); // For gyro sensor
     Serial.begin(115200);  // For debugging
 
@@ -35,22 +44,19 @@ Serial8.begin(115200); // For communication with MainCore
     pinMode(M2, INPUT_PULLDOWN);
 
     // Motor Initialization
-    // Motor 1
-    pinMode(pwmPin1, OUTPUT);
-    pinMode(DIRA_1, OUTPUT);
-    pinMode(DIRB_1, OUTPUT);
-    // Motor 2
-    pinMode(pwmPin2, OUTPUT);
-    pinMode(DIRA_2, OUTPUT);
-    pinMode(DIRB_2, OUTPUT);
-    // Motor 3
-    pinMode(pwmPin3, OUTPUT);
-    pinMode(DIRA_3, OUTPUT);
-    pinMode(DIRB_3, OUTPUT);
-    // Motor 4
-    pinMode(pwmPin4, OUTPUT);
-    pinMode(DIRA_4, OUTPUT);
-    pinMode(DIRB_4, OUTPUT);
+    pinMode(DIR_1,OUTPUT);
+    pinMode(DIR_2,OUTPUT);
+    pinMode(DIR_3,OUTPUT);
+    pinMode(DIR_4,OUTPUT);
+
+    pinMode(pwmPin1,OUTPUT);
+    pinMode(pwmPin2,OUTPUT);
+    pinMode(pwmPin3,OUTPUT);
+    pinMode(pwmPin4,OUTPUT);
+    pinMode(SLP1, OUTPUT);
+    pinMode(SLP2, OUTPUT);
+    digitalWrite(SLP1, HIGH);
+    digitalWrite(SLP2, HIGH);
 
     EEPROM.begin();
     EEPROM.get(0, avg_ls);
@@ -65,7 +71,46 @@ int readMux(int ch, int sig) {
     return analogRead(sig);
 }
 
-void readBNO085Yaw(){
+void update_line_sensor(){
+  lineData.state = 0xFFFFFFFF;
+  
+  for (uint8_t i = 0; i < LS_count; i++) {
+    uint16_t reading = readMux(i % 16, (i < 16) ? 1 : 2);;
+    
+    if (reading < avg_ls[i]) {
+      lineData.state &= ~(1UL << i); 
+      //Serial.printf("%d,%d",i,reading);
+      //Serial.print(" avg ");Serial.print(i);Serial.print(" = ");Serial.print(avg_ls[i]);
+      //Serial.println();
+    }
+  }
+}
+
+void fast_update_line_sensor(){
+  static uint32_t prevRaw = 0xFFFFFFFF;
+  uint32_t rawState       = 0xFFFFFFFF;
+
+  for(uint8_t ch = 0; ch < 16; ch++){
+    digitalWriteFast(s0, (ch >> 0) & 1);
+    digitalWriteFast(s1, (ch >> 1) & 1);
+    digitalWriteFast(s2, (ch >> 2) & 1);
+    digitalWriteFast(s3, (ch >> 3) & 1);
+    /*might be allowed to removed*/
+    //delayMicroseconds(10);
+
+    uint16_t r1 = analogRead(M1);
+    uint16_t r2 = analogRead(M2);
+
+    if(r1 < avg_ls[ch])    rawState &= ~(1UL << ch);
+    if(r2 < avg_ls[ch+16]) rawState &= ~(1UL << (ch + 16));
+  }
+
+  lineData.state = prevRaw | rawState;
+  prevRaw        = rawState;
+}
+
+
+void update_gyro_sensor(){
   const int PACKET_SIZE = 19;
   uint8_t buffer[PACKET_SIZE];
   gyroData.exist = false; // Reset flag before read attempt
@@ -240,23 +285,72 @@ void moveBackInBounds(){
   Serial.print("lineVy =");Serial.println(lineData.lineVy);
   
 }
-void SetMotorSpeed(uint8_t port, float speed) {
-    // Constrain speed to prevent PWM overflow
-    speed = constrain(speed, -255, 255); 
-    int pwmVal = abs((int)speed);
+/* --- Actuators Part --- */
 
-    uint8_t p_pwm, p_a, p_b;
-    switch(port) {
-        case 4: p_pwm = pwmPin1; p_a = DIRA_1; p_b = DIRB_1; break;
-        case 3: p_pwm = pwmPin2; p_a = DIRA_2; p_b = DIRB_2; break;
-        case 2: p_pwm = pwmPin3; p_a = DIRA_3; p_b = DIRB_3; break;
-        case 1: p_pwm = pwmPin4; p_a = DIRA_4; p_b = DIRB_4; break;
-        default: return;
-    }
+void SetMotorSpeed(uint8_t port, float speed){
+  speed = constrain(speed,-1.5 * 50, 1.5 * 50);
+  int pwmVal = abs(speed) * 255 / 100;
+  switch (port){
+    case 1:
+      if(speed<0){
+        digitalWrite(DIR_1, LOW);
+        analogWrite(pwmPin1, pwmVal);
+      }
+      else if(speed>0){
+        digitalWrite(DIR_1, HIGH);
+        analogWrite(pwmPin1, pwmVal);
+      }
+      else{
+        analogWrite(pwmPin1, 0);
+      }
+      break;
+    case 2:
+      if(speed<0){
+        digitalWrite(DIR_2, LOW);
+        analogWrite(pwmPin2, pwmVal);
+      }
+      else if(speed>0){
+        digitalWrite(DIR_2, HIGH);
+        analogWrite(pwmPin2, pwmVal);
+      }
+      else{
+        analogWrite(pwmPin2, 0);
+      }
+      break;
+    case 3:
+      if(speed<0){
+        digitalWrite(DIR_3, LOW);
+        analogWrite(pwmPin3, pwmVal);
+      }
+      else if(speed>0){
+        digitalWrite(DIR_3, HIGH);
+        analogWrite(pwmPin3, pwmVal);
+      }
+      else{
+        analogWrite(pwmPin3, 0);
+      }
+      break;
+    case 4:
+      if(speed<0){
+        digitalWrite(DIR_4, LOW);
+        analogWrite(pwmPin4, pwmVal);
+      }
+      else if(speed>0){
+        digitalWrite(DIR_4, HIGH);
+        analogWrite(pwmPin4, pwmVal);
+      }
+      else{
+        analogWrite(pwmPin4, 0);
+      }
+    break;
+  }
+}
 
-    analogWrite(p_pwm, pwmVal);
-    digitalWrite(p_a, (speed > 0) ? HIGH : LOW);
-    digitalWrite(p_b, (speed < 0) ? HIGH : LOW);
+void MotorStop(){
+  analogWrite(pwmPin1, 0);
+  analogWrite(pwmPin2, 0);
+  analogWrite(pwmPin3, 0);
+  analogWrite(pwmPin4, 0);
 }
 
 void RobotIKControl(float vx, float vy, float omega) {
@@ -272,8 +366,16 @@ void RobotIKControl(float vx, float vy, float omega) {
     SetMotorSpeed(4, p4);
 }
 
-void Vector_Motion(float Vx, float Vy, int rot_V) {  
+void Vector_Motion(float Vx, float Vy, float rot_V) {  
     robot.robot_heading += rot_V; // Update target heading based on input
+    if(robot.robot_heading > 135){
+      robot.robot_heading =  135;  
+    }
+    else if(robot.robot_heading < 45){
+      robot.robot_heading = 45;  
+    }
+    Serial.printf("robot.robot_heading%f\n",robot.robot_heading);
+    
     float e = robot.robot_heading - (90.0f - gyroData.heading);
 
     // Normalize error (-180 to 180)
@@ -303,4 +405,89 @@ void FC_Vector_Motion(float WVx, float WVy, float target_heading) {
     float omega = (fabs(e) > robot.heading_threshold) ? (e * robot.P_factor) : 0;
 
     RobotIKControl(robot_vx, robot_vy, omega);
+}
+
+void readMotor() {
+    // Process all available bytes to find a valid packet
+    while (Serial8.available() >= 6) {
+        if (Serial8.peek() != PROTOCAL_HEADER) {
+            Serial8.read(); 
+            continue;
+        }
+
+        uint8_t buf[6];
+        Serial8.readBytes(buf, 6);
+
+        if (buf[5] == PROTOCAL_END) {
+            // 1. Update motor values
+            mainCommand.vx = (float)((int8_t)buf[1]);
+            mainCommand.vy = (float)((int8_t)buf[2]);
+            mainCommand.rot_v = (float)((int8_t)buf[3]) / 100.0f;
+            mainCommand.heading = (uint16_t)((int8_t)buf[4]) * 10;
+            break; 
+        }
+    }
+}
+
+void readMotorandSendSensors() {
+    // Process all available bytes to find a valid packet
+    while (Serial8.available() >= 6) {
+        if (Serial8.peek() != PROTOCAL_HEADER) {
+            Serial8.read(); 
+            continue;
+        }
+
+        uint8_t buf[6];
+        Serial8.readBytes(buf, 6);
+
+        if (buf[5] == PROTOCAL_END) {
+            // 1. Update motor values
+            mainCommand.vx = (float)((int8_t)buf[1]);
+            mainCommand.vy = (float)((int8_t)buf[2]);
+            mainCommand.rot_v = (float)((int8_t)buf[3]) / 100.0f;
+            mainCommand.heading = (uint16_t)((int8_t)buf[4]) * 10;
+
+            // 2. Prepare FRESH sensor data to send back immediately
+            uint8_t res[7];
+            res[0] = PROTOCAL_HEADER;
+            float temp = fmod((90 - gyroData.heading + 360), 360);
+            res[1] = (uint8_t)(temp / 10.0);
+            res[2] = (uint8_t)(lineData.state & 0xFF);
+            res[3] = (uint8_t)((lineData.state >> 8) & 0xFF);
+            res[4] = (uint8_t)((lineData.state >> 16) & 0xFF);
+            res[5] = (uint8_t)((lineData.state >> 24) & 0xFF);
+            res[6] = PROTOCAL_END;
+
+            // 3. Respond exactly once per received command
+            Serial8.write(res, 7);
+            break; 
+        }
+    }
+}
+
+void readMainPacket() {
+    static uint8_t buffer[20];
+    static int index = 0;
+
+    while (Serial8.available() > 0) {
+        uint8_t b = Serial8.read();
+        buffer[index++] = b;
+        if (index == 20) {
+            index = 0;
+            if (buffer[19] != 0xEE) continue;
+            uint8_t sum = 0;
+            for (int i = 2; i <= 17; i++) sum += buffer[i];
+            if (sum != buffer[18]) continue;
+
+            ballData.angle = (int16_t)((buffer[3] << 8) | buffer[2]);
+            ballData.dist  = (int16_t)((buffer[5] << 8) | buffer[4]);
+            ballData.valid = buffer[6] == 0xFF;
+            goalData.x     = (int16_t)((buffer[8] << 8) | buffer[7]);
+            goalData.valid = buffer[9] == 0xFF;
+            // usData.dist_ｆ       = (int16_t)((buffer[11] << 8) | buffer[10]);
+            // usData.dist_ｌ       = (int16_t)((buffer[15] << 8) | buffer[14])
+            // usData.dist_ｒ       = (int16_t)((buffer[16] << 8) | buffer[17]);
+            usData.dist_b     = (int16_t)((buffer[13] << 8) | buffer[12]);
+        }
+    }
 }
