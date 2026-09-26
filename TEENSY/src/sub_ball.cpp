@@ -527,8 +527,8 @@ void loop() {
     */
    float heading_kp =
     (aim_offset != 0)
-    ? 1.5f    // 持球向左右轉頭
-    : 0.7f;   // 平常保持90度、回正
+    ? 1.5f    
+    : 0.7f;   
     FC_Vector_Motion(
         vx,
         vy,

@@ -248,7 +248,7 @@ void applySideUSBrake(int16_t &vy){
   float front = us_dist_cm[US_FRONT];
   float back = us_dist_cm[US_BACK];
    if(front <= SIDE_DANGER_DIST){
-      vy = -50;  // 往左
+      vy = -50; 
       return;
     }
   if(vy > 0){
@@ -853,8 +853,7 @@ void loop() {
       digitalRead(COM1) == HIGH &&
       digitalRead(COM2) == HIGH;*/
 
-  // 雙 HIGH 才允許攻擊。
-  // 雙 LOW 或一高一低都停止。
+ 
   if (!attack_enable) {
     bool was_attack_active =
         com_attack_active;
@@ -958,10 +957,10 @@ void loop() {
 
   //readBNO085Yaw();
   ballsensor();
-  //updateUS();
+  updateUS();
   readMaix();
   updateKalmanPosition();
-  //readGoal();
+
   if(maixPosData.valid){Serial.println("yes");}
   
   //Serial.print("x= ");Serial.print(filtered_pos_x);
@@ -1076,8 +1075,8 @@ static bool kick_sent = false;
       resetBallField();
 
 
-      float ball_angle = ballData.angle;
-      float ball_dist  = ballData.dist;
+      float ball_angle = maixPosData.ball_angle;
+      float ball_dist  = maixPosData.ball_dist;
 
       ball_angle = fmodf(ball_angle, 360.0f);
       if (ball_angle < 0.0f) {
@@ -1093,7 +1092,7 @@ static bool kick_sent = false;
           70L
       );
 
-      // 遠距離：直接朝球移動
+    
       if (ball_dist < 65.0f) {
         float angleError = fabsf(ball_angle - 90.0f);
 
@@ -1103,21 +1102,20 @@ static bool kick_sent = false;
             1.0f
         );
 
-      // 球偏離正前方時降低速度
+    
       ballspeed *= 0.6f + 0.4f * angleFactor;
 
       if (ball_angle >= 75.0f && ball_angle <= 105.0f) {
-        // 球在正前方：直接接近
+       
         ballspeed = 50.0f;
       } else {
-        // 依球的位置選擇繞球方向
+      
         float side =
             (ball_angle > 105.0f && ball_angle < 270.0f)
             ? 1.0f
             : -1.0f;
 
-        // 距離不超過 55 時，偏角固定為 90 度
-        // 分開處理可避免計算過大的指數值
+
         float offsetRatio =
             (ball_dist <= 55.0f)
             ? 1.0f
@@ -1133,7 +1131,7 @@ static bool kick_sent = false;
         360.0f
     );
 
-    // 換算移動指令
+
     float moving_radian = moving_degree * DtoR_const;
 
     ballData.Vx = (int)roundf(
@@ -1144,7 +1142,7 @@ static bool kick_sent = false;
         ballspeed * sinf(moving_radian)
     );
 
-    // 球已接近正前方：向前推進
+
     if (ball_dist <= 37.0f &&
         ball_angle >= 80.0f &&
         ball_angle <= 100.0f) {

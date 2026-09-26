@@ -123,7 +123,7 @@ void MotorStop();
 void RobotIKControl(int8_t vx, int8_t vy, float omega);
 //void Vector_Motion(float Vx, float Vy);
 void Vector_Motion(float Vx, float Vy, float rot_V, bool reset,bool useRamp);
-void FC_Vector_Motion(int WVx, int WVy, float target_heading);
+void FC_Vector_Motion(int WVx, int WVy, float target_heading,float heading_kp);
 void Degree_Motion(float moving_degree, int8_t speed);
 void kicker_control(bool);
 bool menuUpdate() ;
@@ -719,7 +719,8 @@ void FC_Vector_Motion(int WVx, int WVy, float target_heading) {
 void FC_Vector_Motion(
     int robot_vx,
     int robot_vy,
-    float target_heading) {
+    float target_heading,
+    float heading_kp) {
 
   float omega = 0;
 
@@ -743,7 +744,7 @@ void FC_Vector_Motion(
       control.heading_threshold) {
 
     omega =
-        e * 1.2;
+        e * heading_kp;
   }
 
   RobotIKControl(
