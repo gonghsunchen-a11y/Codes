@@ -1,7 +1,7 @@
 from maix import camera, image, app, time, uart
 import math
 
-DEBUG_VIEW = False
+DEBUG_VIEW =False
 GOAL_UPDATE_EVERY = 10
 last_pos_print = time.ticks_ms()
 
@@ -21,8 +21,8 @@ BALL_LAB = [19, 70, 10, 53, 18, 76]
 
 
 W, H = 320, 240
-CENTER_X, CENTER_Y = 162, 123
-R_MIN, R_MAX = 37, 105
+CENTER_X, CENTER_Y = 160, 123
+R_MIN, R_MAX = 37, 110
 
 BALL_R = 90
 BALL_W_MIN = 4
@@ -32,7 +32,7 @@ BALL_H_MAX = 20
 BALL_PIXELS_MIN = 8
 BALL_PIXELS_MAX = 400
 
-A, B, C = 0.00183098896, 1800.121314, -19.93325639
+A, B, C = 0.003379401783, 1671.194765, -23.10186756
 
 hists = {
     "yellow": [],
@@ -40,7 +40,7 @@ hists = {
 }
 HIST_N = 5
 
-YG = 100
+YG = 110
 ATTACK_Side = 1
 
 frame_count = 0
